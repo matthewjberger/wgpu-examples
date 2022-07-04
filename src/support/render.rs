@@ -1,4 +1,7 @@
+use crate::GuiRender;
 use anyhow::{anyhow, Context, Result};
+use egui::{ClippedPrimitive, TexturesDelta};
+use egui_wgpu::renderer::ScreenDescriptor;
 use raw_window_handle::HasRawWindowHandle;
 use std::cmp::max;
 use wgpu::{
@@ -25,11 +28,25 @@ pub struct Renderer {
     pub device: Device,
     pub queue: Queue,
     pub config: SurfaceConfiguration,
+    pub gui: GuiRender,
 }
 
 impl Renderer {
     pub fn new(window_handle: &impl HasRawWindowHandle, viewport: &Viewport) -> Result<Self> {
         pollster::block_on(Renderer::new_async(window_handle, viewport))
+    }
+
+    pub fn update(
+        &mut self,
+        textures_delta: &TexturesDelta,
+        screen_descriptor: &ScreenDescriptor,
+        paint_jobs: &[ClippedPrimitive],
+    ) -> Result<()> {
+        self.gui
+            .update_textures(&self.device, &self.queue, &textures_delta);
+        self.gui
+            .update_buffers(&self.device, &self.queue, screen_descriptor, paint_jobs);
+        Ok(())
     }
 
     pub fn resize(&mut self, dimensions: [u32; 2]) {
@@ -48,6 +65,8 @@ impl Renderer {
 
     pub fn render_frame(
         &mut self,
+        paint_jobs: &[ClippedPrimitive],
+        screen_descriptor: &ScreenDescriptor,
         mut action: impl FnMut(&TextureView, &mut CommandEncoder) -> Result<()>,
     ) -> Result<()> {
         let surface_texture = self.surface.get_current_texture()?;
@@ -63,6 +82,9 @@ impl Renderer {
             });
 
         action(&view, &mut encoder)?;
+
+        self.gui
+            .execute(&mut encoder, &view, paint_jobs, screen_descriptor, None);
 
         self.queue.submit(std::iter::once(encoder.finish()));
         surface_texture.present();
@@ -96,11 +118,14 @@ impl Renderer {
         };
         surface.configure(&device, &config);
 
+        let gui = GuiRender::new(&device, config.format, 1);
+
         Ok(Self {
             surface,
             device,
             queue,
             config,
+            gui,
         })
     }
 

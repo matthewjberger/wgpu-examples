@@ -1,4 +1,6 @@
 use anyhow::Result;
+use egui::{Context as GuiContext, FullOutput};
+use wgpu::{CommandEncoder, TextureView};
 use winit::{
     dpi::PhysicalSize,
     event::{ElementState, Event, MouseButton, VirtualKeyCode, WindowEvent},
@@ -6,7 +8,14 @@ use winit::{
     window::{Window, WindowBuilder},
 };
 
-use crate::{Renderer, Viewport};
+use crate::{create_screen_descriptor, Gui, Renderer, Viewport};
+
+pub struct Resources<'a> {
+    pub application: &'a mut (dyn Application + 'static),
+    pub gui: &'a mut Gui,
+    pub renderer: &'a mut Renderer,
+    pub window: &'a mut Window,
+}
 
 pub trait Application {
     fn initialize(&mut self, _window: &mut Window) -> Result<()> {
@@ -17,7 +26,11 @@ pub trait Application {
         Ok(())
     }
 
-    fn render(&mut self, _renderer: &mut Renderer) -> Result<()> {
+    fn update_gui(&mut self, _context: &mut GuiContext) -> Result<()> {
+        Ok(())
+    }
+
+    fn render(&mut self, _view: &TextureView, _encoder: &mut CommandEncoder) -> Result<()> {
         Ok(())
     }
 
@@ -63,55 +76,79 @@ pub fn run(mut application: impl Application + 'static, config: AppConfig) -> Re
         },
     )?;
 
+    let mut gui = Gui::new(&window, &event_loop);
+
     application.initialize(&mut window)?;
 
     event_loop.run(move |event, _, control_flow| {
-        if let Err(error) = run_loop(
-            &mut application,
-            &mut renderer,
-            &mut window,
-            &event,
-            control_flow,
-        ) {
+        let mut resources = Resources {
+            application: &mut application,
+            gui: &mut gui,
+            renderer: &mut renderer,
+            window: &mut window,
+        };
+        if let Err(error) = run_loop(&mut resources, &event, control_flow) {
             log::error!("Application error: {}", error);
         }
     });
 }
 
 fn run_loop(
-    application: &mut impl Application,
-    renderer: &mut Renderer,
-    window: &mut Window,
+    resources: &mut Resources,
     event: &Event<()>,
     control_flow: &mut ControlFlow,
 ) -> Result<()> {
+    let Resources {
+        application,
+        gui,
+        renderer,
+        window,
+    } = resources;
     match event {
         Event::MainEventsCleared => {
+            let output = gui.create_frame(window, |context| application.update_gui(context))?;
+            let FullOutput {
+                textures_delta,
+                shapes,
+                ..
+            } = output;
+            let paint_jobs = gui.context.tessellate(shapes);
+            let screen_descriptor = create_screen_descriptor(&window);
+            renderer.update(&textures_delta, &screen_descriptor, &paint_jobs)?;
+
             application.update()?;
-            application.render(renderer)?;
+            renderer.render_frame(&paint_jobs, &screen_descriptor, |view, encoder| {
+                application.render(view, encoder)
+            })?;
         }
         Event::WindowEvent {
             ref event,
             window_id,
-        } if *window_id == window.id() => match event {
-            WindowEvent::CloseRequested => *control_flow = ControlFlow::Exit,
-            WindowEvent::KeyboardInput { input, .. } => {
-                if let (Some(VirtualKeyCode::Escape), ElementState::Pressed) =
-                    (input.virtual_keycode, input.state)
-                {
-                    *control_flow = ControlFlow::Exit;
-                }
+        } if *window_id == window.id() => {
+            gui.handle_window_event(event);
 
-                if let Some(keycode) = input.virtual_keycode.as_ref() {
-                    application.on_key(keycode, &input.state)?;
+            match event {
+                WindowEvent::CloseRequested => *control_flow = ControlFlow::Exit,
+                WindowEvent::KeyboardInput { input, .. } => {
+                    if let (Some(VirtualKeyCode::Escape), ElementState::Pressed) =
+                        (input.virtual_keycode, input.state)
+                    {
+                        *control_flow = ControlFlow::Exit;
+                    }
+
+                    if let Some(keycode) = input.virtual_keycode.as_ref() {
+                        application.on_key(keycode, &input.state)?;
+                    }
                 }
+                WindowEvent::MouseInput { button, state, .. } => {
+                    application.on_mouse(button, state)?
+                }
+                WindowEvent::Resized(physical_size) => {
+                    renderer.resize([physical_size.width, physical_size.height]);
+                }
+                _ => {}
             }
-            WindowEvent::MouseInput { button, state, .. } => application.on_mouse(button, state)?,
-            WindowEvent::Resized(physical_size) => {
-                renderer.resize([physical_size.width, physical_size.height]);
-            }
-            _ => {}
-        },
+        }
         Event::LoopDestroyed => {
             application.cleanup()?;
         }
