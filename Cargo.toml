@@ -5,6 +5,9 @@ edition = "2021"
 
 [dependencies]
 anyhow = "1.0.58"
+egui = { git = "https://github.com/emilk/egui" }
+egui-wgpu = { git = "https://github.com/emilk/egui", features = ["winit"] }
+egui-winit = { git = "https://github.com/emilk/egui" }
 env_logger = "0.9.0"
 log = "0.4.17"
 nalgebra-glm = "0.17.0"
