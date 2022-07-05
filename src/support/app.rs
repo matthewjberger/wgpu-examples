@@ -18,7 +18,7 @@ pub struct Resources<'a> {
 }
 
 pub trait Application {
-    fn initialize(&mut self, _window: &mut Window) -> Result<()> {
+    fn initialize(&mut self, _renderer: &mut Renderer) -> Result<()> {
         Ok(())
     }
 
@@ -65,6 +65,7 @@ pub fn run(mut application: impl Application + 'static, config: AppConfig) -> Re
     let mut window = WindowBuilder::new()
         .with_title(config.title)
         .with_inner_size(PhysicalSize::new(config.width, config.height))
+        .with_transparent(true)
         .build(&event_loop)?;
 
     let mut renderer = Renderer::new(
@@ -78,7 +79,7 @@ pub fn run(mut application: impl Application + 'static, config: AppConfig) -> Re
 
     let mut gui = Gui::new(&window, &event_loop);
 
-    application.initialize(&mut window)?;
+    application.initialize(&mut renderer)?;
 
     event_loop.run(move |event, _, control_flow| {
         let mut resources = Resources {

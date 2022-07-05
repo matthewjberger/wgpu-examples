@@ -6,7 +6,7 @@ struct App;
 
 impl Application for App {
     fn update_gui(&mut self, context: &mut egui::Context) -> Result<()> {
-        egui::Window::new("WGPU Example Application")
+        egui::Window::new("wgpu")
             .resizable(false)
             .fixed_pos((10.0, 10.0))
             .show(&context, |ui| {

@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 anyhow = "1.0.58"
+bytemuck = "1.10.0"
 egui = { git = "https://github.com/emilk/egui" }
 egui-wgpu = { git = "https://github.com/emilk/egui", features = ["winit"] }
 egui-winit = { git = "https://github.com/emilk/egui" }
