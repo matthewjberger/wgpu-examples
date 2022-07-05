@@ -3,8 +3,8 @@ use std::{borrow::Cow, mem};
 use support::{run, AppConfig, Application, Renderer, Texture};
 use wgpu::{
     util::{BufferInitDescriptor, DeviceExt},
-    BindGroup, BindGroupLayout, Buffer, Device, Queue, RenderPass, RenderPipeline, ShaderModule,
-    TextureFormat,
+    vertex_attr_array, BindGroup, BindGroupLayout, Buffer, Device, Queue, RenderPass,
+    RenderPipeline, ShaderModule, TextureFormat, VertexAttribute,
 };
 
 #[repr(C)]
@@ -15,22 +15,15 @@ struct Vertex {
 }
 
 impl Vertex {
-    pub fn description<'a>() -> wgpu::VertexBufferLayout<'a> {
+    pub fn vertex_attributes() -> Vec<VertexAttribute> {
+        vertex_attr_array![0 => Float32x4, 1 => Float32x2].to_vec()
+    }
+
+    pub fn description<'a>(attributes: &'a [VertexAttribute]) -> wgpu::VertexBufferLayout<'a> {
         wgpu::VertexBufferLayout {
             array_stride: mem::size_of::<Vertex>() as wgpu::BufferAddress,
             step_mode: wgpu::VertexStepMode::Vertex,
-            attributes: &[
-                wgpu::VertexAttribute {
-                    offset: 0,
-                    shader_location: 0,
-                    format: wgpu::VertexFormat::Float32x4,
-                },
-                wgpu::VertexAttribute {
-                    offset: mem::size_of::<[f32; 4]>() as wgpu::BufferAddress,
-                    shader_location: 1,
-                    format: wgpu::VertexFormat::Float32x2,
-                },
-            ],
+            attributes,
         }
     }
 }
@@ -218,7 +211,7 @@ impl Scene {
             vertex: wgpu::VertexState {
                 module: &vertex_module,
                 entry_point: "vertex_main",
-                buffers: &[Vertex::description()],
+                buffers: &[Vertex::description(&Vertex::vertex_attributes())],
             },
             primitive: wgpu::PrimitiveState {
                 topology: wgpu::PrimitiveTopology::TriangleStrip,
