@@ -34,7 +34,7 @@ impl Vertex {
     }
 }
 
-const VERTEX_DATA: [Vertex; 3] = [
+const VERTICES: [Vertex; 3] = [
     Vertex {
         position: [1.0, -1.0, 0.0, 1.0],
         color: [1.0, 0.0, 0.0, 1.0],
@@ -49,7 +49,7 @@ const VERTEX_DATA: [Vertex; 3] = [
     },
 ];
 
-const INDEX_DATA: [u16; 3] = [0, 1, 2]; // Clockwise winding order
+const INDICES: [u16; 3] = [0, 1, 2]; // Clockwise winding order
 
 const SHADER_SOURCE: &str = "
 struct VertexInput {
@@ -83,13 +83,10 @@ pub struct Scene {
 
 impl Scene {
     pub fn new(device: &Device, surface_format: TextureFormat) -> Self {
-        let (vertex_module, fragment_module) = Self::create_shaders(device);
-
         let vertex_buffer = Self::create_vertex_buffer(device);
         let index_buffer = Self::create_index_buffer(device);
 
-        let pipeline =
-            Self::create_pipeline(device, vertex_module, fragment_module, surface_format);
+        let pipeline = Self::create_pipeline(device, surface_format);
 
         Self {
             vertex_buffer,
@@ -102,7 +99,7 @@ impl Scene {
         renderpass.set_pipeline(&self.pipeline);
         renderpass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
         renderpass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
-        renderpass.draw_indexed(0..3, 0, 0..1);
+        renderpass.draw_indexed(0..(INDICES.len() as _), 0, 0..1);
     }
 
     fn create_shaders(device: &Device) -> (ShaderModule, ShaderModule) {
@@ -122,7 +119,7 @@ impl Scene {
     fn create_vertex_buffer(device: &Device) -> Buffer {
         device.create_buffer_init(&BufferInitDescriptor {
             label: Some("Vertex Buffer"),
-            contents: bytemuck::cast_slice(&VERTEX_DATA),
+            contents: bytemuck::cast_slice(&VERTICES),
             usage: wgpu::BufferUsages::VERTEX,
         })
     }
@@ -130,18 +127,13 @@ impl Scene {
     fn create_index_buffer(device: &Device) -> Buffer {
         device.create_buffer_init(&BufferInitDescriptor {
             label: Some("Index Buffer"),
-            contents: bytemuck::cast_slice(&INDEX_DATA),
+            contents: bytemuck::cast_slice(&INDICES),
             usage: wgpu::BufferUsages::INDEX,
         })
     }
 
-    fn create_pipeline(
-        device: &Device,
-        vertex_module: ShaderModule,
-        fragment_module: ShaderModule,
-        surface_format: TextureFormat,
-    ) -> RenderPipeline {
-        let vertex_buffer_layouts = [Vertex::description()];
+    fn create_pipeline(device: &Device, surface_format: TextureFormat) -> RenderPipeline {
+        let (vertex_module, fragment_module) = Self::create_shaders(device);
 
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: None,
@@ -155,7 +147,7 @@ impl Scene {
             vertex: wgpu::VertexState {
                 module: &vertex_module,
                 entry_point: "vertex_main",
-                buffers: &vertex_buffer_layouts,
+                buffers: &[Vertex::description()],
             },
             primitive: wgpu::PrimitiveState {
                 topology: wgpu::PrimitiveTopology::TriangleStrip,
