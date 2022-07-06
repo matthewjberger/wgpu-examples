@@ -12,7 +12,7 @@ egui-winit = { git = "https://github.com/emilk/egui" }
 env_logger = "0.9.0"
 image = "0.24.2"
 log = "0.4.17"
-nalgebra-glm = "0.17.0"
+nalgebra-glm = { version = "0.17.0", features = ["convert-bytemuck"] }
 pollster = "0.2.5"
 raw-window-handle = "0.4.3"
 wgpu = "0.13.1"

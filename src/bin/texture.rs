@@ -7,27 +7,6 @@ use wgpu::{
     RenderPipeline, ShaderModule, TextureFormat, VertexAttribute,
 };
 
-#[repr(C)]
-#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
-struct Vertex {
-    position: [f32; 4],
-    tex_coords: [f32; 2],
-}
-
-impl Vertex {
-    pub fn vertex_attributes() -> Vec<VertexAttribute> {
-        vertex_attr_array![0 => Float32x4, 1 => Float32x2].to_vec()
-    }
-
-    pub fn description<'a>(attributes: &'a [VertexAttribute]) -> wgpu::VertexBufferLayout<'a> {
-        wgpu::VertexBufferLayout {
-            array_stride: mem::size_of::<Vertex>() as wgpu::BufferAddress,
-            step_mode: wgpu::VertexStepMode::Vertex,
-            attributes,
-        }
-    }
-}
-
 const VERTICES: [Vertex; 4] = [
     Vertex {
         position: [0.6, -0.6, 0.0, 1.0],
@@ -79,38 +58,32 @@ fn fragment_main(in: VertexOutput) -> @location(0) vec4<f32> {
 }
 ";
 
-pub struct Scene {
-    pub vertex_buffer: Buffer,
-    pub index_buffer: Buffer,
+struct Scene {
+    pub geometry: Geometry,
     pub pipeline: RenderPipeline,
-    pub texture: Texture,
-    pub texture_bind_group: wgpu::BindGroup,
+    pub texture: TextureBinding,
 }
 
 impl Scene {
     pub fn new(device: &Device, queue: &Queue, surface_format: TextureFormat) -> Result<Self> {
-        let vertex_buffer = Self::create_vertex_buffer(device);
-        let index_buffer = Self::create_index_buffer(device);
-
-        let (texture, texture_bind_group, texture_bind_group_layout) =
-            Self::load_texture(device, queue)?;
-
-        let pipeline = Self::create_pipeline(device, surface_format, &[&texture_bind_group_layout]);
-
+        let geometry = Geometry::new(device, &VERTICES, &INDICES);
+        let texture = TextureBinding::new(device, queue)?;
+        let pipeline = Self::create_pipeline(device, surface_format, &[&texture.bind_group_layout]);
         Ok(Self {
-            vertex_buffer,
-            index_buffer,
+            geometry,
             pipeline,
             texture,
-            texture_bind_group,
         })
     }
 
     pub fn render<'rpass>(&'rpass self, renderpass: &mut RenderPass<'rpass>) {
         renderpass.set_pipeline(&self.pipeline);
-        renderpass.set_bind_group(0, &self.texture_bind_group, &[]);
-        renderpass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-        renderpass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+        renderpass.set_bind_group(0, &self.texture.bind_group, &[]);
+
+        let (vertex_slice, index_slice) = self.geometry.slices();
+        renderpass.set_vertex_buffer(0, vertex_slice);
+        renderpass.set_index_buffer(index_slice, wgpu::IndexFormat::Uint16);
+
         renderpass.draw_indexed(0..(INDICES.len() as _), 0, 0..1);
     }
 
@@ -126,70 +99,6 @@ impl Scene {
         });
 
         (vertex_module, fragment_module)
-    }
-
-    fn create_vertex_buffer(device: &Device) -> Buffer {
-        device.create_buffer_init(&BufferInitDescriptor {
-            label: Some("Vertex Buffer"),
-            contents: bytemuck::cast_slice(&VERTICES),
-            usage: wgpu::BufferUsages::VERTEX,
-        })
-    }
-
-    fn create_index_buffer(device: &Device) -> Buffer {
-        device.create_buffer_init(&BufferInitDescriptor {
-            label: Some("Index Buffer"),
-            contents: bytemuck::cast_slice(&INDICES),
-            usage: wgpu::BufferUsages::INDEX,
-        })
-    }
-
-    fn load_texture(
-        device: &Device,
-        queue: &Queue,
-    ) -> Result<(Texture, BindGroup, BindGroupLayout)> {
-        let texture_bytes = include_bytes!("../../assets/textures/planks.jpg");
-        let texture = Texture::from_bytes(&device, &queue, texture_bytes, "planks.jpg")?;
-
-        let texture_bind_group_layout =
-            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                entries: &[
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 0,
-                        visibility: wgpu::ShaderStages::FRAGMENT,
-                        ty: wgpu::BindingType::Texture {
-                            multisampled: false,
-                            view_dimension: wgpu::TextureViewDimension::D2,
-                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                        },
-                        count: None,
-                    },
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 1,
-                        visibility: wgpu::ShaderStages::FRAGMENT,
-                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                        count: None,
-                    },
-                ],
-                label: Some("texture_bind_group_layout"),
-            });
-
-        let texture_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            layout: &texture_bind_group_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: wgpu::BindingResource::TextureView(&texture.view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::Sampler(&texture.sampler),
-                },
-            ],
-            label: Some("texture_bind_group"),
-        });
-
-        Ok((texture, texture_bind_group, texture_bind_group_layout))
     }
 
     fn create_pipeline(
@@ -299,6 +208,117 @@ impl Application for App {
         }
 
         Ok(())
+    }
+}
+
+struct TextureBinding {
+    _texture: Texture,
+    pub bind_group: BindGroup,
+    pub bind_group_layout: BindGroupLayout,
+}
+
+impl TextureBinding {
+    pub fn new(device: &Device, queue: &Queue) -> Result<Self> {
+        let texture_bytes = include_bytes!("../../assets/textures/planks.jpg");
+        let texture = Texture::from_bytes(&device, &queue, texture_bytes, "planks.jpg")?;
+
+        let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        multisampled: false,
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
+            ],
+            label: Some("texture_bind_group_layout"),
+        });
+
+        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout: &bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&texture.view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&texture.sampler),
+                },
+            ],
+            label: Some("texture_bind_group"),
+        });
+
+        Ok(Self {
+            _texture: texture,
+            bind_group,
+            bind_group_layout,
+        })
+    }
+}
+
+struct Geometry {
+    pub vertex_buffer: Buffer,
+    pub index_buffer: Buffer,
+}
+
+impl Geometry {
+    pub fn new(device: &wgpu::Device, vertices: &[Vertex], indices: &[u16]) -> Self {
+        Self {
+            vertex_buffer: Self::create_vertex_buffer(device, vertices),
+            index_buffer: Self::create_index_buffer(device, indices),
+        }
+    }
+
+    pub fn slices(&self) -> (wgpu::BufferSlice, wgpu::BufferSlice) {
+        (self.vertex_buffer.slice(..), self.index_buffer.slice(..))
+    }
+
+    fn create_vertex_buffer(device: &Device, vertices: &[impl bytemuck::Pod]) -> Buffer {
+        device.create_buffer_init(&BufferInitDescriptor {
+            label: Some("Vertex Buffer"),
+            contents: bytemuck::cast_slice(&vertices),
+            usage: wgpu::BufferUsages::VERTEX,
+        })
+    }
+
+    fn create_index_buffer(device: &Device, indices: &[impl bytemuck::Pod]) -> Buffer {
+        device.create_buffer_init(&BufferInitDescriptor {
+            label: Some("Index Buffer"),
+            contents: bytemuck::cast_slice(&indices),
+            usage: wgpu::BufferUsages::INDEX,
+        })
+    }
+}
+
+#[repr(C)]
+#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+struct Vertex {
+    position: [f32; 4],
+    tex_coords: [f32; 2],
+}
+
+impl Vertex {
+    pub fn vertex_attributes() -> Vec<VertexAttribute> {
+        vertex_attr_array![0 => Float32x4, 1 => Float32x2].to_vec()
+    }
+
+    pub fn description<'a>(attributes: &'a [VertexAttribute]) -> wgpu::VertexBufferLayout<'a> {
+        wgpu::VertexBufferLayout {
+            array_stride: mem::size_of::<Vertex>() as wgpu::BufferAddress,
+            step_mode: wgpu::VertexStepMode::Vertex,
+            attributes,
+        }
     }
 }
 
