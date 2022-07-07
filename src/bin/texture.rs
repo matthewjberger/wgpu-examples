@@ -1,10 +1,9 @@
 use anyhow::Result;
 use std::{borrow::Cow, mem};
-use support::{run, AppConfig, Application, Renderer, Texture};
+use support::{run, AppConfig, Application, Geometry, Renderer, Texture};
 use wgpu::{
-    util::{BufferInitDescriptor, DeviceExt},
-    vertex_attr_array, BindGroup, BindGroupLayout, Buffer, Device, Queue, RenderPass,
-    RenderPipeline, ShaderModule, TextureFormat, VertexAttribute,
+    vertex_attr_array, BindGroup, BindGroupLayout, Device, Queue, RenderPass, RenderPipeline,
+    ShaderModule, TextureFormat, VertexAttribute,
 };
 
 const VERTICES: [Vertex; 4] = [
@@ -68,7 +67,7 @@ impl Scene {
     pub fn new(device: &Device, queue: &Queue, surface_format: TextureFormat) -> Result<Self> {
         let geometry = Geometry::new(device, &VERTICES, &INDICES);
         let texture = TextureBinding::new(device, queue)?;
-        let pipeline = Self::create_pipeline(device, surface_format, &[&texture.bind_group_layout]);
+        let pipeline = Self::create_pipeline(device, surface_format, &texture);
         Ok(Self {
             geometry,
             pipeline,
@@ -104,13 +103,13 @@ impl Scene {
     fn create_pipeline(
         device: &Device,
         surface_format: TextureFormat,
-        bind_group_layouts: &[&BindGroupLayout],
+        texture: &TextureBinding,
     ) -> RenderPipeline {
         let (vertex_module, fragment_module) = Self::create_shaders(device);
 
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: None,
-            bind_group_layouts,
+            bind_group_layouts: &[&texture.bind_group_layout],
             push_constant_ranges: &[],
         });
 
@@ -263,40 +262,6 @@ impl TextureBinding {
             _texture: texture,
             bind_group,
             bind_group_layout,
-        })
-    }
-}
-
-struct Geometry {
-    pub vertex_buffer: Buffer,
-    pub index_buffer: Buffer,
-}
-
-impl Geometry {
-    pub fn new(device: &wgpu::Device, vertices: &[Vertex], indices: &[u16]) -> Self {
-        Self {
-            vertex_buffer: Self::create_vertex_buffer(device, vertices),
-            index_buffer: Self::create_index_buffer(device, indices),
-        }
-    }
-
-    pub fn slices(&self) -> (wgpu::BufferSlice, wgpu::BufferSlice) {
-        (self.vertex_buffer.slice(..), self.index_buffer.slice(..))
-    }
-
-    fn create_vertex_buffer(device: &Device, vertices: &[impl bytemuck::Pod]) -> Buffer {
-        device.create_buffer_init(&BufferInitDescriptor {
-            label: Some("Vertex Buffer"),
-            contents: bytemuck::cast_slice(&vertices),
-            usage: wgpu::BufferUsages::VERTEX,
-        })
-    }
-
-    fn create_index_buffer(device: &Device, indices: &[impl bytemuck::Pod]) -> Buffer {
-        device.create_buffer_init(&BufferInitDescriptor {
-            label: Some("Index Buffer"),
-            contents: bytemuck::cast_slice(&indices),
-            usage: wgpu::BufferUsages::INDEX,
         })
     }
 }

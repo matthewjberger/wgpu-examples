@@ -22,7 +22,7 @@ pub trait Application {
         Ok(())
     }
 
-    fn update(&mut self) -> Result<()> {
+    fn update(&mut self, _renderer: &mut Renderer) -> Result<()> {
         Ok(())
     }
 
@@ -117,7 +117,7 @@ fn run_loop(
             let screen_descriptor = create_screen_descriptor(&window);
             renderer.update(&textures_delta, &screen_descriptor, &paint_jobs)?;
 
-            application.update()?;
+            application.update(renderer)?;
             renderer.render_frame(&paint_jobs, &screen_descriptor, |view, encoder| {
                 application.render(view, encoder)
             })?;

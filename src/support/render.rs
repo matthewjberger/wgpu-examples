@@ -92,6 +92,10 @@ impl Renderer {
         Ok(())
     }
 
+    pub fn aspect_ratio(&self) -> f32 {
+        self.config.width as f32 / std::cmp::max(1, self.config.height) as f32
+    }
+
     async fn new_async(
         window_handle: &impl HasRawWindowHandle,
         viewport: &Viewport,
