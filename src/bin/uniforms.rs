@@ -107,7 +107,7 @@ const VERTICES: [Vertex; 3] = [
     },
 ];
 
-const INDICES: [u16; 3] = [0, 1, 2]; // Clockwise winding order
+const INDICES: [u32; 3] = [0, 1, 2]; // Clockwise winding order
 
 const SHADER_SOURCE: &str = "
 struct Uniform {
@@ -166,7 +166,7 @@ impl Scene {
 
         let (vertex_buffer_slice, index_buffer_slice) = self.geometry.slices();
         renderpass.set_vertex_buffer(0, vertex_buffer_slice);
-        renderpass.set_index_buffer(index_buffer_slice, wgpu::IndexFormat::Uint16);
+        renderpass.set_index_buffer(index_buffer_slice, wgpu::IndexFormat::Uint32);
 
         renderpass.draw_indexed(0..(INDICES.len() as _), 0, 0..1);
     }
@@ -226,7 +226,7 @@ impl Scene {
             },
             primitive: wgpu::PrimitiveState {
                 topology: wgpu::PrimitiveTopology::TriangleStrip,
-                strip_index_format: Some(wgpu::IndexFormat::Uint16),
+                strip_index_format: Some(wgpu::IndexFormat::Uint32),
                 front_face: wgpu::FrontFace::Cw,
                 cull_mode: None,
                 polygon_mode: wgpu::PolygonMode::Fill,

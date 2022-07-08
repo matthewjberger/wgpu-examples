@@ -2,7 +2,7 @@ use super::{
     AlphaMode, Animation, BoundingBox, Camera, Channel, Ecs, Entity, Filter, Format, Interpolation,
     Joint, Light, LightKind, Material, Mesh, MeshRender, MorphTarget, Name, OrthographicCamera,
     PerspectiveCamera, Primitive, Projection, Sampler, Scene, SceneGraph, Skin, Transform,
-    TransformationSet, Vertex, World, WorldGeometry, WorldTexture, WrappingMode,
+    TransformationSet, World, WorldGeometry, WorldTexture, WorldVertex, WrappingMode,
 };
 use anyhow::{Context, Result};
 use gltf::animation::util::ReadOutputs;
@@ -452,7 +452,7 @@ fn load_primitive_vertices(
     );
 
     for (index, position) in positions.into_iter().enumerate() {
-        geometry.vertices.push(Vertex {
+        geometry.vertices.push(WorldVertex {
             position,
             normal: normals[index],
             uv_0: uv_0[index],

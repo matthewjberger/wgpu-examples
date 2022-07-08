@@ -9,7 +9,7 @@ pub struct Geometry {
 }
 
 impl Geometry {
-    pub fn new<T: bytemuck::Pod>(device: &wgpu::Device, vertices: &[T], indices: &[u16]) -> Self {
+    pub fn new<T: bytemuck::Pod>(device: &wgpu::Device, vertices: &[T], indices: &[u32]) -> Self {
         Self {
             vertex_buffer: Self::create_vertex_buffer(device, vertices),
             index_buffer: Self::create_index_buffer(device, indices),

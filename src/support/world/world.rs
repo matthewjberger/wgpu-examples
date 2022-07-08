@@ -800,7 +800,7 @@ impl MorphTarget {
 
 #[derive(Default, Debug, Serialize, Deserialize)]
 pub struct WorldGeometry {
-    pub vertices: Vec<Vertex>,
+    pub vertices: Vec<WorldVertex>,
     pub indices: Vec<u32>,
     pub meshes: HashMap<String, Mesh>,
 }
@@ -812,8 +812,9 @@ impl WorldGeometry {
     }
 }
 
-#[derive(Debug, Copy, Clone, Serialize, Deserialize)]
-pub struct Vertex {
+#[repr(C)]
+#[derive(Debug, Copy, Clone, Serialize, Deserialize, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct WorldVertex {
     pub position: glm::Vec3,
     pub normal: glm::Vec3,
     pub uv_0: glm::Vec2,
@@ -823,7 +824,7 @@ pub struct Vertex {
     pub color_0: glm::Vec3,
 }
 
-impl Default for Vertex {
+impl Default for WorldVertex {
     fn default() -> Self {
         Self {
             position: glm::Vec3::default(),
