@@ -265,7 +265,7 @@ impl Application for App {
             .resizable(false)
             .fixed_pos((10.0, 10.0))
             .show(&context, |ui| {
-                ui.heading("Uniforms");
+                ui.heading("Models");
             });
         Ok(())
     }
@@ -309,7 +309,7 @@ fn main() -> Result<()> {
     run(
         App::default(),
         AppConfig {
-            title: "Uniforms".to_string(),
+            title: "Models (incomplete)".to_string(),
             width: 800,
             height: 600,
         },
