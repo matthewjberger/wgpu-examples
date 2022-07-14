@@ -1,11 +1,16 @@
+use crate::Event::WindowEvent;
 use anyhow::Result;
 use nalgebra_glm as glm;
 use std::{borrow::Cow, mem};
-use support::{run, AppConfig, Application, Geometry, Renderer, Texture};
+use support::{
+    camera::{Camera, CameraController},
+    run, AppConfig, Application, Geometry, Renderer, Texture,
+};
 use wgpu::{
     util::DeviceExt, vertex_attr_array, BindGroup, BindGroupLayout, Buffer, BufferAddress, Device,
     Queue, RenderPass, RenderPipeline, ShaderModule, TextureFormat, VertexAttribute,
 };
+use winit::{event::Event, window::Window};
 
 struct Instance {
     position: glm::Vec3,
@@ -197,9 +202,13 @@ fn vertex_main(vert: VertexInput, instance: InstanceInput) -> VertexOutput {
         instance.model_matrix_3,
     );
 
+    var position = vert.position;
+    position.y *= -1.0;
+
     var out: VertexOutput;
     out.color = vert.color;
-    out.position = ubo.mvp * model_matrix * vert.position;
+    out.position = ubo.mvp * model_matrix * position;
+
     return out;
 };
 
@@ -275,19 +284,12 @@ impl Scene {
         renderpass.draw_indexed(0..(INDICES.len() as _), 0, 0..self.instances.len() as _);
     }
 
-    pub fn update(&mut self, queue: &Queue, aspect_ratio: f32) {
-        let projection = glm::perspective_lh_zo(aspect_ratio, 80_f32.to_radians(), 0.1, 1000.0);
-        let view = glm::look_at_lh(
-            &glm::vec3(2.0, 4.0, 2.0),
-            &glm::vec3(-4.0, 0.0, -4.0),
-            &glm::Vec3::y(),
-        );
-
+    pub fn update(&mut self, view_projection_matrix: glm::Mat4, queue: &Queue) {
         self.uniform.update_buffer(
             queue,
             0,
             UniformBuffer {
-                mvp: projection * view,
+                mvp: view_projection_matrix,
             },
         )
     }
@@ -368,6 +370,8 @@ impl Scene {
 #[derive(Default)]
 struct App {
     scene: Option<Scene>,
+    camera: Camera,
+    camera_controller: CameraController,
     depth_texture: Option<Texture>,
 }
 
@@ -383,8 +387,11 @@ impl Application for App {
     }
 
     fn update(&mut self, renderer: &mut Renderer) -> Result<()> {
+        self.camera.aspect = renderer.aspect_ratio();
+        self.camera_controller.update_camera(&mut self.camera);
+        let view_projection_matrix = self.camera.build_view_projection_matrix();
         if let Some(scene) = self.scene.as_mut() {
-            scene.update(&renderer.queue, renderer.aspect_ratio());
+            scene.update(view_projection_matrix, &renderer.queue);
         }
         Ok(())
     }
@@ -394,7 +401,7 @@ impl Application for App {
             .resizable(false)
             .fixed_pos((10.0, 10.0))
             .show(&context, |ui| {
-                ui.heading("Uniforms");
+                ui.heading("Instancing");
             });
         Ok(())
     }
@@ -405,6 +412,13 @@ impl Application for App {
             renderer.config.width,
             renderer.config.height,
         ));
+        Ok(())
+    }
+
+    fn handle_event(&mut self, event: &Event<()>, _window: &Window) -> Result<()> {
+        if let WindowEvent { event, .. } = event {
+            self.camera_controller.process_event(event);
+        }
         Ok(())
     }
 
@@ -461,7 +475,7 @@ fn main() -> Result<()> {
     run(
         App::default(),
         AppConfig {
-            title: "Uniforms".to_string(),
+            title: "Instancing".to_string(),
             width: 800,
             height: 600,
         },
