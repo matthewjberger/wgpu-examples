@@ -12,57 +12,75 @@ use wgpu::{
 };
 use winit::{event::Event, window::Window};
 
+struct InstanceBinding {
+    pub instances: Vec<Instance>,
+    pub buffer: Buffer,
+}
+
+impl InstanceBinding {
+    pub fn new(device: &Device) -> Self {
+        let num_instances_per_row: u32 = 10;
+        let instance_displacement: glm::Vec3 = glm::vec3(
+            num_instances_per_row as f32,
+            0.0,
+            num_instances_per_row as f32,
+        );
+        let instances = (0..num_instances_per_row)
+            .flat_map(|z| {
+                (0..num_instances_per_row).map(move |x| {
+                    let position = glm::vec3(x as f32, 0.0, z as f32) - instance_displacement;
+
+                    let rotation = if position.is_empty() {
+                        // this is needed so an object at (0, 0, 0) won't get scaled to zero
+                        // as Quaternions can effect scale if they're not created correctly
+                        glm::quat_angle_axis(0.0, &glm::Vec3::z())
+                    } else {
+                        glm::quat_angle_axis(45_f32.to_degrees(), &position.normalize())
+                    };
+
+                    Instance { position, rotation }
+                })
+            })
+            .collect::<Vec<_>>();
+
+        let instance_data = instances
+            .iter()
+            .map(Instance::model_matrix)
+            .collect::<Vec<_>>();
+        let instance_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Instance Buffer"),
+            contents: bytemuck::cast_slice(&instance_data),
+            usage: wgpu::BufferUsages::VERTEX,
+        });
+
+        Self {
+            instances,
+            buffer: instance_buffer,
+        }
+    }
+}
+
 struct Instance {
     position: glm::Vec3,
     rotation: glm::Quat,
 }
 
 impl Instance {
-    fn to_raw(&self) -> InstanceRaw {
-        InstanceRaw {
-            model: glm::translation(&self.position) * glm::quat_to_mat4(&self.rotation),
-        }
+    fn model_matrix(&self) -> glm::Mat4 {
+        glm::translation(&self.position) * glm::quat_to_mat4(&self.rotation)
     }
 }
 
-#[repr(C)]
-#[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
-struct InstanceRaw {
-    model: glm::Mat4,
-}
+impl Instance {
+    pub fn vertex_attributes() -> Vec<VertexAttribute> {
+        vertex_attr_array![2 => Float32x4, 3 => Float32x4, 4 => Float32x4, 5 => Float32x4].to_vec()
+    }
 
-impl InstanceRaw {
-    fn description<'a>() -> wgpu::VertexBufferLayout<'a> {
+    pub fn description<'a>(attributes: &'a [VertexAttribute]) -> wgpu::VertexBufferLayout<'a> {
         wgpu::VertexBufferLayout {
-            array_stride: mem::size_of::<InstanceRaw>() as wgpu::BufferAddress,
-            // We need to switch from using a step mode of Vertex to Instance
-            // This means that our shaders will only change to use the next
-            // instance when the shader starts processing a new instance
+            array_stride: mem::size_of::<glm::Mat4>() as wgpu::BufferAddress,
             step_mode: wgpu::VertexStepMode::Instance,
-            attributes: &[
-                wgpu::VertexAttribute {
-                    offset: 0,
-                    shader_location: 2,
-                    format: wgpu::VertexFormat::Float32x4,
-                },
-                // A mat4 takes up 4 vertex slots as it is technically 4 vec4s. We need to define a slot
-                // for each vec4. We'll have to reassemble the mat4 in the shader.
-                wgpu::VertexAttribute {
-                    offset: mem::size_of::<[f32; 4]>() as wgpu::BufferAddress,
-                    shader_location: 3,
-                    format: wgpu::VertexFormat::Float32x4,
-                },
-                wgpu::VertexAttribute {
-                    offset: mem::size_of::<[f32; 8]>() as wgpu::BufferAddress,
-                    shader_location: 4,
-                    format: wgpu::VertexFormat::Float32x4,
-                },
-                wgpu::VertexAttribute {
-                    offset: mem::size_of::<[f32; 12]>() as wgpu::BufferAddress,
-                    shader_location: 5,
-                    format: wgpu::VertexFormat::Float32x4,
-                },
-            ],
+            attributes,
         }
     }
 }
@@ -220,10 +238,9 @@ fn fragment_main(in: VertexOutput) -> @location(0) vec4<f32> {
 
 struct Scene {
     pub geometry: Geometry,
+    pub instance: InstanceBinding,
     pub uniform: UniformBinding,
     pub pipeline: RenderPipeline,
-    pub instances: Vec<Instance>,
-    pub instance_buffer: Buffer,
 }
 
 impl Scene {
@@ -231,44 +248,12 @@ impl Scene {
         let geometry = Geometry::new(device, &VERTICES, &INDICES);
         let uniform = UniformBinding::new(device);
         let pipeline = Self::create_pipeline(device, surface_format, &uniform);
-
-        let num_instances_per_row: u32 = 10;
-        let instance_displacement: glm::Vec3 = glm::vec3(
-            num_instances_per_row as f32,
-            0.0,
-            num_instances_per_row as f32,
-        );
-        let instances = (0..num_instances_per_row)
-            .flat_map(|z| {
-                (0..num_instances_per_row).map(move |x| {
-                    let position = glm::vec3(x as f32, 0.0, z as f32) - instance_displacement;
-
-                    let rotation = if position.is_empty() {
-                        // this is needed so an object at (0, 0, 0) won't get scaled to zero
-                        // as Quaternions can effect scale if they're not created correctly
-                        glm::quat_angle_axis(0.0, &glm::Vec3::z())
-                    } else {
-                        glm::quat_angle_axis(45_f32.to_degrees(), &position.normalize())
-                    };
-
-                    Instance { position, rotation }
-                })
-            })
-            .collect::<Vec<_>>();
-
-        let instance_data = instances.iter().map(Instance::to_raw).collect::<Vec<_>>();
-        let instance_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Instance Buffer"),
-            contents: bytemuck::cast_slice(&instance_data),
-            usage: wgpu::BufferUsages::VERTEX,
-        });
-
+        let instance = InstanceBinding::new(device);
         Self {
             geometry,
+            instance,
             uniform,
             pipeline,
-            instances,
-            instance_buffer,
         }
     }
 
@@ -278,10 +263,14 @@ impl Scene {
 
         let (vertex_buffer_slice, index_buffer_slice) = self.geometry.slices();
         renderpass.set_vertex_buffer(0, vertex_buffer_slice);
-        renderpass.set_vertex_buffer(1, self.instance_buffer.slice(..));
+        renderpass.set_vertex_buffer(1, self.instance.buffer.slice(..));
         renderpass.set_index_buffer(index_buffer_slice, wgpu::IndexFormat::Uint32);
 
-        renderpass.draw_indexed(0..(INDICES.len() as _), 0, 0..self.instances.len() as _);
+        renderpass.draw_indexed(
+            0..(INDICES.len() as _),
+            0,
+            0..self.instance.instances.len() as _,
+        );
     }
 
     pub fn update(&mut self, view_projection_matrix: glm::Mat4, queue: &Queue) {
@@ -329,7 +318,7 @@ impl Scene {
                 entry_point: "vertex_main",
                 buffers: &[
                     Vertex::description(&Vertex::vertex_attributes()),
-                    InstanceRaw::description(),
+                    Instance::description(&Instance::vertex_attributes()),
                 ],
             },
             primitive: wgpu::PrimitiveState {
