@@ -30,6 +30,10 @@ pub trait Application {
         Ok(())
     }
 
+    fn resize(&mut self, _renderer: &mut Renderer) -> Result<()> {
+        Ok(())
+    }
+
     fn render(&mut self, _view: &TextureView, _encoder: &mut CommandEncoder) -> Result<()> {
         Ok(())
     }
@@ -146,6 +150,7 @@ fn run_loop(
                 }
                 WindowEvent::Resized(physical_size) => {
                     renderer.resize([physical_size.width, physical_size.height]);
+                    application.resize(renderer)?;
                 }
                 _ => {}
             }
