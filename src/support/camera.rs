@@ -18,10 +18,8 @@ impl MouseOrbit {
         if input.mouse.is_left_clicked {
             let mut delta = input.mouse.position_delta;
             delta.x = -1.0 * input.mouse.position_delta.x;
-            self.orientation.rotate(&glm::vec2(
-                delta.x * system.delta_time as f32,
-                delta.y * system.delta_time as f32,
-            ));
+            delta *= system.delta_time as f32;
+            self.orientation.rotate(&delta);
         }
 
         if input.mouse.is_right_clicked {
