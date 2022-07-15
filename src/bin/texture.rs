@@ -86,26 +86,15 @@ impl Scene {
         renderpass.draw_indexed(0..(INDICES.len() as _), 0, 0..1);
     }
 
-    fn create_shaders(device: &Device) -> (ShaderModule, ShaderModule) {
-        let vertex_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: None,
-            source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(SHADER_SOURCE)),
-        });
-
-        let fragment_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: None,
-            source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(SHADER_SOURCE)),
-        });
-
-        (vertex_module, fragment_module)
-    }
-
     fn create_pipeline(
         device: &Device,
         surface_format: TextureFormat,
         texture: &TextureBinding,
     ) -> RenderPipeline {
-        let (vertex_module, fragment_module) = Self::create_shaders(device);
+        let shader_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: None,
+            source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(SHADER_SOURCE)),
+        });
 
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: None,
@@ -117,7 +106,7 @@ impl Scene {
             label: None,
             layout: Some(&pipeline_layout),
             vertex: wgpu::VertexState {
-                module: &vertex_module,
+                module: &shader_module,
                 entry_point: "vertex_main",
                 buffers: &[Vertex::description(&Vertex::vertex_attributes())],
             },
@@ -137,7 +126,7 @@ impl Scene {
                 alpha_to_coverage_enabled: false,
             },
             fragment: Some(wgpu::FragmentState {
-                module: &fragment_module,
+                module: &shader_module,
                 entry_point: "fragment_main",
                 targets: &[Some(wgpu::ColorTargetState {
                     format: surface_format,
