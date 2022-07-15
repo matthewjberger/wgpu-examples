@@ -1,16 +1,13 @@
-use crate::Event::WindowEvent;
 use anyhow::Result;
 use nalgebra_glm as glm;
 use std::{borrow::Cow, mem};
 use support::{
-    camera::{Camera, CameraController},
-    run, AppConfig, Application, Geometry, Renderer, Texture,
+    camera::MouseOrbit, run, AppConfig, Application, Geometry, Input, Renderer, System, Texture,
 };
 use wgpu::{
     util::DeviceExt, vertex_attr_array, BindGroup, BindGroupLayout, Buffer, BufferAddress, Device,
     Queue, RenderPass, RenderPipeline, ShaderModule, TextureFormat, VertexAttribute,
 };
-use winit::{event::Event, window::Window};
 
 struct InstanceBinding {
     pub instances: Vec<Instance>,
@@ -359,13 +356,14 @@ impl Scene {
 #[derive(Default)]
 struct App {
     scene: Option<Scene>,
-    camera: Camera,
-    camera_controller: CameraController,
+    camera: MouseOrbit,
     depth_texture: Option<Texture>,
 }
 
 impl Application for App {
     fn initialize(&mut self, renderer: &mut Renderer) -> Result<()> {
+        self.camera.transform.translation = glm::vec3(4.0, 0.0, 4.0);
+        self.camera.orientation.sensitivity = glm::vec2(0.1, 0.1);
         self.scene = Some(Scene::new(&renderer.device, renderer.config.format));
         self.depth_texture = Some(Texture::create_depth_texture(
             &renderer.device,
@@ -375,12 +373,11 @@ impl Application for App {
         Ok(())
     }
 
-    fn update(&mut self, renderer: &mut Renderer) -> Result<()> {
-        self.camera.aspect = renderer.aspect_ratio();
-        self.camera_controller.update_camera(&mut self.camera);
-        let view_projection_matrix = self.camera.build_view_projection_matrix();
+    fn update(&mut self, renderer: &mut Renderer, input: &Input, system: &System) -> Result<()> {
+        self.camera.update(input, system)?;
+        let projection_view_matrix = self.camera.projection_view_matrix(renderer.aspect_ratio());
         if let Some(scene) = self.scene.as_mut() {
-            scene.update(view_projection_matrix, &renderer.queue);
+            scene.update(projection_view_matrix, &renderer.queue);
         }
         Ok(())
     }
@@ -401,13 +398,6 @@ impl Application for App {
             renderer.config.width,
             renderer.config.height,
         ));
-        Ok(())
-    }
-
-    fn handle_event(&mut self, event: &Event<()>, _window: &Window) -> Result<()> {
-        if let WindowEvent { event, .. } = event {
-            self.camera_controller.process_event(event);
-        }
         Ok(())
     }
 

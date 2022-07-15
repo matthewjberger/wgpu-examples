@@ -8,11 +8,13 @@ use winit::{
     window::{Window, WindowBuilder},
 };
 
-use crate::{create_screen_descriptor, Gui, Renderer, Viewport};
+use crate::{create_screen_descriptor, Gui, Input, Renderer, System, Viewport};
 
 pub struct Resources<'a> {
     pub application: &'a mut (dyn Application + 'static),
     pub gui: &'a mut Gui,
+    pub input: &'a mut Input,
+    pub system: &'a mut System,
     pub renderer: &'a mut Renderer,
     pub window: &'a mut Window,
 }
@@ -22,7 +24,7 @@ pub trait Application {
         Ok(())
     }
 
-    fn update(&mut self, _renderer: &mut Renderer) -> Result<()> {
+    fn update(&mut self, _renderer: &mut Renderer, _input: &Input, _system: &System) -> Result<()> {
         Ok(())
     }
 
@@ -83,12 +85,18 @@ pub fn run(mut application: impl Application + 'static, config: AppConfig) -> Re
 
     let mut gui = Gui::new(&window, &event_loop);
 
+    let window_dimensions = window.inner_size();
+    let mut input = Input::default();
+    let mut system = System::new(window_dimensions);
+
     application.initialize(&mut renderer)?;
 
     event_loop.run(move |event, _, control_flow| {
         let mut resources = Resources {
             application: &mut application,
             gui: &mut gui,
+            input: &mut input,
+            system: &mut system,
             renderer: &mut renderer,
             window: &mut window,
         };
@@ -107,8 +115,14 @@ fn run_loop(
         application,
         gui,
         renderer,
+        input,
+        system,
         window,
     } = resources;
+
+    system.handle_event(event);
+    input.handle_event(event, system.window_center());
+
     match event {
         Event::MainEventsCleared => {
             let output = gui.create_frame(window, |context| application.update_gui(context))?;
@@ -121,7 +135,7 @@ fn run_loop(
             let screen_descriptor = create_screen_descriptor(&window);
             renderer.update(&textures_delta, &screen_descriptor, &paint_jobs)?;
 
-            application.update(renderer)?;
+            application.update(renderer, input, system)?;
             renderer.render_frame(&paint_jobs, &screen_descriptor, |view, encoder| {
                 application.render(view, encoder)
             })?;

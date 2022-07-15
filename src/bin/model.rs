@@ -1,7 +1,9 @@
 use anyhow::Result;
 use nalgebra_glm as glm;
 use std::{borrow::Cow, mem};
-use support::{load_gltf, run, AppConfig, Application, Geometry, Renderer, World, WorldVertex};
+use support::{
+    load_gltf, run, AppConfig, Application, Geometry, Input, Renderer, System, World, WorldVertex,
+};
 use wgpu::{
     util::DeviceExt, vertex_attr_array, BindGroup, BindGroupLayout, Buffer, BufferAddress, Device,
     Queue, RenderPass, RenderPipeline, ShaderModule, TextureFormat, VertexAttribute,
@@ -253,7 +255,7 @@ impl Application for App {
         Ok(())
     }
 
-    fn update(&mut self, renderer: &mut Renderer) -> Result<()> {
+    fn update(&mut self, renderer: &mut Renderer, _input: &Input, _system: &System) -> Result<()> {
         if let Some(scene) = self.scene.as_mut() {
             scene.update(&renderer.queue, renderer.aspect_ratio());
         }

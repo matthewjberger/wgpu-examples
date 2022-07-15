@@ -1,144 +1,122 @@
+use anyhow::Result;
 use nalgebra_glm as glm;
-use winit::event::{ElementState, KeyboardInput, VirtualKeyCode, WindowEvent};
 
-pub struct Camera {
-    pub eye: glm::Vec3,
-    pub target: glm::Vec3,
-    pub up: glm::Vec3,
-    pub aspect: f32,
-    pub fovy: f32,
-    pub znear: f32,
-    pub zfar: f32,
+use crate::{Input, PerspectiveCamera, System, Transform};
+
+#[derive(Default)]
+pub struct MouseOrbit {
+    pub camera: PerspectiveCamera,
+    pub transform: Transform,
+    pub orientation: Orientation,
 }
 
-impl Default for Camera {
+impl MouseOrbit {
+    pub fn update(&mut self, input: &Input, system: &System) -> Result<()> {
+        self.orientation
+            .zoom(2.0 * input.mouse.wheel_delta.y * system.delta_time as f32);
+
+        if input.mouse.is_left_clicked {
+            let mut delta = input.mouse.position_delta;
+            delta.x = -1.0 * input.mouse.position_delta.x;
+            self.orientation.rotate(&glm::vec2(
+                delta.x * system.delta_time as f32,
+                delta.y * system.delta_time as f32,
+            ));
+        }
+
+        if input.mouse.is_right_clicked {
+            self.orientation
+                .pan(&(input.mouse.position_delta * system.delta_time as f32))
+        }
+
+        self.transform.translation = self.orientation.position();
+        self.transform.rotation = self.orientation.look_at_offset();
+
+        Ok(())
+    }
+
+    pub fn projection_view_matrix(&self, aspect_ratio: f32) -> glm::Mat4 {
+        self.camera.projection_matrix(aspect_ratio) * self.transform.as_view_matrix()
+    }
+}
+
+pub struct Orientation {
+    pub min_radius: f32,
+    pub max_radius: f32,
+    pub radius: f32,
+    pub offset: glm::Vec3,
+    pub sensitivity: glm::Vec2,
+    pub direction: glm::Vec2,
+}
+
+impl Orientation {
+    pub fn direction(&self) -> glm::Vec3 {
+        glm::vec3(
+            self.direction.y.sin() * self.direction.x.sin(),
+            self.direction.y.cos(),
+            self.direction.y.sin() * self.direction.x.cos(),
+        )
+    }
+
+    pub fn rotate(&mut self, position_delta: &glm::Vec2) {
+        let delta = position_delta.component_mul(&self.sensitivity);
+        self.direction.x += delta.x;
+        self.direction.y = glm::clamp_scalar(
+            self.direction.y + delta.y,
+            10.0_f32.to_radians(),
+            170.0_f32.to_radians(),
+        );
+    }
+
+    pub fn up(&self) -> glm::Vec3 {
+        self.right().cross(&self.direction())
+    }
+
+    pub fn right(&self) -> glm::Vec3 {
+        self.direction().cross(&glm::Vec3::y()).normalize()
+    }
+
+    pub fn pan(&mut self, offset: &glm::Vec2) {
+        self.offset += self.right() * offset.x;
+        self.offset += self.up() * offset.y;
+    }
+
+    pub fn position(&self) -> glm::Vec3 {
+        (self.direction() * self.radius) + self.offset
+    }
+
+    pub fn zoom(&mut self, distance: f32) {
+        self.radius -= distance;
+        if self.radius < self.min_radius {
+            self.radius = self.min_radius;
+        }
+        if self.radius > self.max_radius {
+            self.radius = self.max_radius;
+        }
+    }
+
+    pub fn look_at_offset(&self) -> glm::Quat {
+        self.look(self.offset - self.position())
+    }
+
+    pub fn look_forward(&self) -> glm::Quat {
+        self.look(-self.direction())
+    }
+
+    fn look(&self, point: glm::Vec3) -> glm::Quat {
+        glm::quat_conjugate(&glm::quat_look_at(&point, &glm::Vec3::y()))
+    }
+}
+
+impl Default for Orientation {
     fn default() -> Self {
         Self {
-            eye: glm::vec3(3.0, 3.0, 3.0),
-            target: glm::vec3(0.0, 0.0, 0.0),
-            up: glm::Vec3::y(),
-            aspect: 4.0 / 3.0,
-            fovy: 80_f32.to_radians(),
-            znear: 0.1,
-            zfar: 1000.0,
-        }
-    }
-}
-
-impl Camera {
-    pub fn build_view_projection_matrix(&self) -> glm::Mat4 {
-        let view = glm::look_at_rh(&self.eye, &self.target, &self.up);
-        let projection =
-            glm::perspective_rh_zo(self.aspect, self.fovy.to_degrees(), self.znear, self.zfar);
-        return projection * view;
-    }
-}
-
-pub struct CameraController {
-    pub speed: f32,
-    pub is_up_pressed: bool,
-    pub is_down_pressed: bool,
-    pub is_forward_pressed: bool,
-    pub is_backward_pressed: bool,
-    pub is_left_pressed: bool,
-    pub is_right_pressed: bool,
-}
-
-impl Default for CameraController {
-    fn default() -> Self {
-        Self {
-            speed: 0.4,
-            is_up_pressed: false,
-            is_down_pressed: false,
-            is_forward_pressed: false,
-            is_backward_pressed: false,
-            is_left_pressed: false,
-            is_right_pressed: false,
-        }
-    }
-}
-
-impl CameraController {
-    pub fn process_event(&mut self, event: &WindowEvent) -> bool {
-        match event {
-            WindowEvent::KeyboardInput {
-                input:
-                    KeyboardInput {
-                        state,
-                        virtual_keycode: Some(keycode),
-                        ..
-                    },
-                ..
-            } => {
-                let is_pressed = *state == ElementState::Pressed;
-                match keycode {
-                    VirtualKeyCode::Space => {
-                        self.is_up_pressed = is_pressed;
-                        true
-                    }
-                    VirtualKeyCode::LShift => {
-                        self.is_down_pressed = is_pressed;
-                        true
-                    }
-                    VirtualKeyCode::W | VirtualKeyCode::Up => {
-                        self.is_forward_pressed = is_pressed;
-                        true
-                    }
-                    VirtualKeyCode::A | VirtualKeyCode::Left => {
-                        self.is_left_pressed = is_pressed;
-                        true
-                    }
-                    VirtualKeyCode::S | VirtualKeyCode::Down => {
-                        self.is_backward_pressed = is_pressed;
-                        true
-                    }
-                    VirtualKeyCode::D | VirtualKeyCode::Right => {
-                        self.is_right_pressed = is_pressed;
-                        true
-                    }
-                    _ => false,
-                }
-            }
-            _ => false,
-        }
-    }
-
-    pub fn update_camera(&self, camera: &mut Camera) {
-        let forward = camera.target - camera.eye;
-        let forward_norm = forward.normalize();
-        let forward_mag = forward.magnitude();
-
-        // Prevents glitching when camera gets too close to the
-        // center of the scene.
-        if self.is_forward_pressed && forward_mag > self.speed {
-            camera.eye += forward_norm * self.speed;
-        }
-        if self.is_backward_pressed {
-            camera.eye -= forward_norm * self.speed;
-        }
-
-        let right = forward_norm.cross(&camera.up);
-
-        // Redo radius calc in case the up/ down is pressed.
-        let forward = camera.target - camera.eye;
-        let forward_mag = forward.magnitude();
-
-        if self.is_right_pressed {
-            // Rescale the distance between the target and eye so
-            // that it doesn't change. The eye therefore still
-            // lies on the circle made by the target and eye.
-            camera.eye = camera.target - (forward + right * self.speed).normalize() * forward_mag;
-        }
-        if self.is_left_pressed {
-            camera.eye = camera.target - (forward - right * self.speed).normalize() * forward_mag;
-        }
-
-        if self.is_up_pressed {
-            camera.eye.y += 0.1;
-        }
-
-        if self.is_down_pressed {
-            camera.eye.y -= 0.1;
+            min_radius: 1.0,
+            max_radius: 100.0,
+            radius: 5.0,
+            offset: glm::vec3(0.0, 0.0, 0.0),
+            sensitivity: glm::vec2(1.0, 1.0),
+            direction: glm::vec2(0_f32.to_radians(), 45_f32.to_radians()),
         }
     }
 }

@@ -1,7 +1,7 @@
 use nalgebra_glm as glm;
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Default, Debug, Serialize, Deserialize)]
 pub struct Camera {
     pub name: String,
     pub projection: Projection,
@@ -11,7 +11,7 @@ pub struct Camera {
 impl Camera {
     pub fn projection_matrix(&self, viewport_aspect_ratio: f32) -> glm::Mat4 {
         match &self.projection {
-            Projection::Perspective(camera) => camera.matrix(viewport_aspect_ratio),
+            Projection::Perspective(camera) => camera.projection_matrix(viewport_aspect_ratio),
             Projection::Orthographic(camera) => camera.matrix(),
         }
     }
@@ -30,7 +30,13 @@ pub enum Projection {
     Orthographic(OrthographicCamera),
 }
 
-#[derive(Default, Debug, Serialize, Deserialize)]
+impl Default for Projection {
+    fn default() -> Self {
+        Self::Perspective(PerspectiveCamera::default())
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
 pub struct PerspectiveCamera {
     pub aspect_ratio: Option<f32>,
     pub y_fov_rad: f32,
@@ -38,8 +44,19 @@ pub struct PerspectiveCamera {
     pub z_near: f32,
 }
 
+impl Default for PerspectiveCamera {
+    fn default() -> Self {
+        Self {
+            aspect_ratio: None,
+            y_fov_rad: 80_f32.to_radians(),
+            z_far: None,
+            z_near: 0.1,
+        }
+    }
+}
+
 impl PerspectiveCamera {
-    pub fn matrix(&self, viewport_aspect_ratio: f32) -> glm::Mat4 {
+    pub fn projection_matrix(&self, viewport_aspect_ratio: f32) -> glm::Mat4 {
         let aspect_ratio = if let Some(aspect_ratio) = self.aspect_ratio {
             aspect_ratio
         } else {
