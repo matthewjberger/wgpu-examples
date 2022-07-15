@@ -3,7 +3,7 @@ use std::{borrow::Cow, mem};
 use support::{run, AppConfig, Application, Geometry, Renderer, Texture};
 use wgpu::{
     vertex_attr_array, BindGroup, BindGroupLayout, Device, Queue, RenderPass, RenderPipeline,
-    ShaderModule, TextureFormat, VertexAttribute,
+    TextureFormat, VertexAttribute,
 };
 
 const VERTICES: [Vertex; 4] = [

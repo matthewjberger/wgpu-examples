@@ -1,10 +1,7 @@
 use anyhow::Result;
 use std::{borrow::Cow, mem};
 use support::{run, AppConfig, Application, Geometry, Renderer};
-use wgpu::{
-    vertex_attr_array, Device, RenderPass, RenderPipeline, ShaderModule, TextureFormat,
-    VertexAttribute,
-};
+use wgpu::{vertex_attr_array, Device, RenderPass, RenderPipeline, TextureFormat, VertexAttribute};
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
