@@ -144,7 +144,7 @@ impl Instance {
 
 impl Instance {
     pub fn vertex_attributes() -> Vec<VertexAttribute> {
-        vertex_attr_array![2 => Float32x4, 3 => Float32x4, 4 => Float32x4, 5 => Float32x4].to_vec()
+        vertex_attr_array![3 => Float32x4, 4 => Float32x4, 5 => Float32x4, 6 => Float32x4].to_vec()
     }
 
     pub fn description<'a>(attributes: &'a [VertexAttribute]) -> wgpu::VertexBufferLayout<'a> {
@@ -160,12 +160,13 @@ impl Instance {
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 struct Vertex {
     position: [f32; 4],
+    normal: [f32; 4],
     color: [f32; 4],
 }
 
 impl Vertex {
     pub fn vertex_attributes() -> Vec<VertexAttribute> {
-        vertex_attr_array![0 => Float32x4, 1 => Float32x4].to_vec()
+        vertex_attr_array![0 => Float32x4, 1 => Float32x4, 2 => Float32x4].to_vec()
     }
 
     pub fn description<'a>(attributes: &'a [VertexAttribute]) -> wgpu::VertexBufferLayout<'a> {
@@ -241,18 +242,22 @@ impl UniformBinding {
     }
 }
 
+#[rustfmt::skip]
 const VERTICES: [Vertex; 3] = [
     Vertex {
-        position: [1.0, -1.0, 0.0, 1.0],
-        color: [1.0, 0.0, 0.0, 1.0],
+        position: [ 1.0, -1.0, 0.0, 1.0],
+        normal:   [ 0.0,  1.0, 0.0, 1.0],
+        color:    [ 1.0,  0.0, 0.0, 1.0],
     },
     Vertex {
         position: [-1.0, -1.0, 0.0, 1.0],
-        color: [0.0, 1.0, 0.0, 1.0],
+        normal:   [ 0.0,  1.0, 0.0, 1.0],
+        color:    [ 0.0,  1.0, 0.0, 1.0],
     },
     Vertex {
-        position: [0.0, 1.0, 0.0, 1.0],
-        color: [0.0, 0.0, 1.0, 1.0],
+        position: [ 0.0,  1.0, 0.0, 1.0],
+        normal:   [ 0.0,  1.0, 0.0, 1.0],
+        color:    [ 0.0,  0.0, 1.0, 1.0],
     },
 ];
 
@@ -260,10 +265,10 @@ const INDICES: [u32; 3] = [0, 1, 2]; // Clockwise winding order
 
 const SHADER_SOURCE: &str = "
 struct InstanceInput {
-    @location(2) model_matrix_0: vec4<f32>,
-    @location(3) model_matrix_1: vec4<f32>,
-    @location(4) model_matrix_2: vec4<f32>,
-    @location(5) model_matrix_3: vec4<f32>,
+    @location(3) model_matrix_0: vec4<f32>,
+    @location(4) model_matrix_1: vec4<f32>,
+    @location(5) model_matrix_2: vec4<f32>,
+    @location(6) model_matrix_3: vec4<f32>,
 };
 
 struct Uniform {
@@ -283,7 +288,8 @@ var<uniform> light: Light;
 
 struct VertexInput {
     @location(0) position: vec4<f32>,
-    @location(1) color: vec4<f32>,
+    @location(1) normal: vec4<f32>,
+    @location(2) color: vec4<f32>,
 };
 struct VertexOutput {
     @builtin(position) position: vec4<f32>,
