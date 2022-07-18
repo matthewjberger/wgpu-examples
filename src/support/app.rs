@@ -28,7 +28,7 @@ pub trait Application {
         Ok(())
     }
 
-    fn update_gui(&mut self, _context: &mut GuiContext) -> Result<()> {
+    fn update_gui(&mut self, _renderer: &mut Renderer, _context: &mut GuiContext) -> Result<()> {
         Ok(())
     }
 
@@ -120,12 +120,26 @@ fn run_loop(
         window,
     } = resources;
 
-    system.handle_event(event);
-    input.handle_event(event, system.window_center());
+    let gui_captured_event = match event {
+        Event::WindowEvent { event, window_id } => {
+            if *window_id == window.id() {
+                gui.handle_window_event(event)
+            } else {
+                false
+            }
+        }
+        _ => false,
+    };
+
+    if !gui_captured_event {
+        system.handle_event(event);
+        input.handle_event(event, system.window_center());
+    }
 
     match event {
         Event::MainEventsCleared => {
-            let output = gui.create_frame(window, |context| application.update_gui(context))?;
+            let output =
+                gui.create_frame(window, |context| application.update_gui(renderer, context))?;
             let FullOutput {
                 textures_delta,
                 shapes,
@@ -143,32 +157,26 @@ fn run_loop(
         Event::WindowEvent {
             ref event,
             window_id,
-        } if *window_id == window.id() => {
-            gui.handle_window_event(event);
+        } if *window_id == window.id() => match event {
+            WindowEvent::CloseRequested => *control_flow = ControlFlow::Exit,
+            WindowEvent::KeyboardInput { input, .. } => {
+                if let (Some(VirtualKeyCode::Escape), ElementState::Pressed) =
+                    (input.virtual_keycode, input.state)
+                {
+                    *control_flow = ControlFlow::Exit;
+                }
 
-            match event {
-                WindowEvent::CloseRequested => *control_flow = ControlFlow::Exit,
-                WindowEvent::KeyboardInput { input, .. } => {
-                    if let (Some(VirtualKeyCode::Escape), ElementState::Pressed) =
-                        (input.virtual_keycode, input.state)
-                    {
-                        *control_flow = ControlFlow::Exit;
-                    }
-
-                    if let Some(keycode) = input.virtual_keycode.as_ref() {
-                        application.on_key(keycode, &input.state)?;
-                    }
+                if let Some(keycode) = input.virtual_keycode.as_ref() {
+                    application.on_key(keycode, &input.state)?;
                 }
-                WindowEvent::MouseInput { button, state, .. } => {
-                    application.on_mouse(button, state)?
-                }
-                WindowEvent::Resized(physical_size) => {
-                    renderer.resize([physical_size.width, physical_size.height]);
-                    application.resize(renderer)?;
-                }
-                _ => {}
             }
-        }
+            WindowEvent::MouseInput { button, state, .. } => application.on_mouse(button, state)?,
+            WindowEvent::Resized(physical_size) => {
+                renderer.resize([physical_size.width, physical_size.height]);
+                application.resize(renderer)?;
+            }
+            _ => {}
+        },
         Event::LoopDestroyed => {
             application.cleanup()?;
         }

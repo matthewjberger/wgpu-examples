@@ -18,9 +18,9 @@ impl Gui {
         Self { state, context }
     }
 
-    pub fn handle_window_event(&mut self, event: &WindowEvent) {
+    pub fn handle_window_event(&mut self, event: &WindowEvent) -> bool {
         let Gui { state, context } = self;
-        state.on_event(context, event);
+        state.on_event(context, event)
     }
 
     pub fn create_frame(

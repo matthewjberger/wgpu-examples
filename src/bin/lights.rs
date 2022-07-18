@@ -1,4 +1,5 @@
 use anyhow::Result;
+use egui::color_picker::color_edit_button_rgb;
 use nalgebra_glm as glm;
 use std::{borrow::Cow, mem};
 use support::{
@@ -79,7 +80,7 @@ impl LightBinding {
             &self.buffer,
             offset,
             bytemuck::cast_slice(&[self.light_uniform]),
-        )
+        );
     }
 }
 
@@ -246,17 +247,17 @@ impl UniformBinding {
 const VERTICES: [Vertex; 3] = [
     Vertex {
         position: [ 1.0, -1.0, 0.0, 1.0],
-        normal:   [ 0.0,  1.0, 0.0, 1.0],
+        normal:   [ 0.0, -1.0, 0.0, 1.0],
         color:    [ 1.0,  0.0, 0.0, 1.0],
     },
     Vertex {
         position: [-1.0, -1.0, 0.0, 1.0],
-        normal:   [ 0.0,  1.0, 0.0, 1.0],
+        normal:   [ 0.0, -1.0, 0.0, 1.0],
         color:    [ 0.0,  1.0, 0.0, 1.0],
     },
     Vertex {
         position: [ 0.0,  1.0, 0.0, 1.0],
-        normal:   [ 0.0,  1.0, 0.0, 1.0],
+        normal:   [ 0.0, -1.0, 0.0, 1.0],
         color:    [ 0.0,  0.0, 1.0, 1.0],
     },
 ];
@@ -294,6 +295,7 @@ struct VertexInput {
 struct VertexOutput {
     @builtin(position) position: vec4<f32>,
     @location(0) color: vec4<f32>,
+    @location(1) world_normal: vec4<f32>,
 };
 
 @vertex
@@ -310,8 +312,8 @@ fn vertex_main(vert: VertexInput, instance: InstanceInput) -> VertexOutput {
 
     var out: VertexOutput;
     out.color = vert.color;
+    out.world_normal = vert.normal;
     out.position = ubo.mvp * model_matrix * position;
-
     return out;
 };
 
@@ -319,7 +321,10 @@ fn vertex_main(vert: VertexInput, instance: InstanceInput) -> VertexOutput {
 fn fragment_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let ambient_strength = 0.1;
     let ambient_color = light.color * ambient_strength;
-    let result = ambient_color * in.color;
+    let light_dir = normalize(light.position - in.position);
+    let diffuse_strength =  max(dot(in.world_normal, light_dir), 0.0);
+    let diffuse_color = light.color * diffuse_strength;
+    let result = (ambient_color + diffuse_color) * in.color;
 
     return vec4<f32>(result.xyz, 1.0);
 }
@@ -374,10 +379,6 @@ impl Scene {
                 mvp: view_projection_matrix,
             },
         );
-
-        self.light.light_uniform.position =
-            glm::rotate_vec4(&self.light.light_uniform.position, 1.0, &glm::Vec3::y());
-        self.light.update_buffer(queue, 0, self.light.light_uniform);
     }
 
     fn create_pipeline(
@@ -445,7 +446,7 @@ impl Scene {
 
 #[derive(Default)]
 struct App {
-    scene: Option<Scene>,
+    pub scene: Option<Scene>,
     camera: MouseOrbit,
     depth_texture: Option<Texture>,
 }
@@ -472,12 +473,44 @@ impl Application for App {
         Ok(())
     }
 
-    fn update_gui(&mut self, context: &mut egui::Context) -> Result<()> {
+    fn update_gui(&mut self, renderer: &mut Renderer, context: &mut egui::Context) -> Result<()> {
         egui::Window::new("wgpu")
             .resizable(false)
             .fixed_pos((10.0, 10.0))
             .show(&context, |ui| {
-                ui.heading("Instancing");
+                ui.heading("Light");
+
+                if let Some(scene) = self.scene.as_mut() {
+                    ui.heading("Light color");
+                    let light_color = scene.light.light_uniform.color;
+                    let mut color = [light_color.x, light_color.y, light_color.z];
+                    let color_response = color_edit_button_rgb(ui, &mut color);
+
+                    ui.heading("Light position");
+                    let mut position = scene.light.light_uniform.position;
+                    let speed = 0.1;
+                    let position_response_x =
+                        ui.add(egui::DragValue::new(&mut position.x).speed(speed));
+                    let position_response_y =
+                        ui.add(egui::DragValue::new(&mut position.y).speed(speed));
+                    let position_response_z =
+                        ui.add(egui::DragValue::new(&mut position.z).speed(speed));
+
+                    if color_response.changed()
+                        || position_response_x.changed()
+                        || position_response_y.changed()
+                        || position_response_z.changed()
+                    {
+                        scene.light.update_buffer(
+                            &renderer.queue,
+                            0,
+                            LightUniformBuffer {
+                                position: glm::vec4(position[0], position[1], position[2], 1.0),
+                                color: glm::vec4(color[0], color[1], color[2], 1.0),
+                            },
+                        );
+                    }
+                }
             });
         Ok(())
     }
@@ -544,7 +577,7 @@ fn main() -> Result<()> {
     run(
         App::default(),
         AppConfig {
-            title: "Instancing".to_string(),
+            title: "Light".to_string(),
             width: 800,
             height: 600,
         },

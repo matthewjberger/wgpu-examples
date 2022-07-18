@@ -1,11 +1,11 @@
 use anyhow::Result;
-use support::{run, AppConfig, Application};
+use support::{run, AppConfig, Application, Renderer};
 
 #[derive(Default)]
 struct App;
 
 impl Application for App {
-    fn update_gui(&mut self, context: &mut egui::Context) -> Result<()> {
+    fn update_gui(&mut self, _renderer: &mut Renderer, context: &mut egui::Context) -> Result<()> {
         egui::Window::new("wgpu")
             .resizable(false)
             .fixed_pos((10.0, 10.0))
