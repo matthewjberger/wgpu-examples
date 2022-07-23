@@ -1,3 +1,5 @@
+use crate::TextureDescription;
+
 use super::{
     AlphaMode, Animation, BoundingBox, Camera, Channel, Ecs, Entity, Filter, Format, Interpolation,
     Joint, Light, LightKind, Material, Mesh, MeshRender, MorphTarget, Name, OrthographicCamera,
@@ -174,13 +176,8 @@ fn load_textures(gltf: &gltf::Document, images: &[gltf::image::Data]) -> Result<
         let image_index = texture.source().index();
         let image = images.get(image_index).context(image_error_message)?;
 
-        let texture = WorldTexture {
-            pixels: image.pixels.to_vec(),
-            format: map_gltf_format(image.format),
-            width: image.width,
-            height: image.height,
-            sampler,
-        };
+        let texture =
+            WorldTexture::from_description(create_texture_description(image), Some(sampler))?;
         textures.push(texture);
     }
     Ok(textures)
@@ -668,5 +665,14 @@ fn map_gltf_light_kind(light: gltf::khr_lights_punctual::Kind) -> LightKind {
             inner_cone_angle,
             outer_cone_angle,
         },
+    }
+}
+
+fn create_texture_description(image: &gltf::image::Data) -> TextureDescription {
+    TextureDescription {
+        width: image.width,
+        height: image.height,
+        pixels: image.pixels.to_vec(),
+        format: map_gltf_format(image.format),
     }
 }
