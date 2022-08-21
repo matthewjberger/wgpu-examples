@@ -13,7 +13,7 @@ use petgraph::prelude::*;
 use rapier3d::{
     dynamics::RigidBodyBuilder,
     geometry::{ColliderBuilder, InteractionGroups, Ray},
-    prelude::RigidBodyType,
+    prelude::{QueryFilter, RigidBodyType},
 };
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, mem::replace, path::Path};
@@ -488,12 +488,12 @@ impl World {
         let ray = self.mouse_ray(mouse_ray_configuration)?;
 
         let hit = self.physics.query_pipeline.cast_ray(
+            &self.physics.bodies,
             &self.physics.colliders,
             &ray,
             interact_distance,
             true,
-            groups,
-            None,
+            QueryFilter::from(groups),
         );
 
         let mut picked_entity = None;
