@@ -6,6 +6,9 @@ pub mod input;
 pub mod render;
 pub mod system;
 pub mod texture;
+pub mod transform;
 pub mod world;
 
-pub use self::{app::*, geometry::*, gui::*, input::*, render::*, system::*, texture::*, world::*};
+pub use self::{
+    app::*, geometry::*, gui::*, input::*, render::*, system::*, texture::*, transform::*, world::*,
+};
