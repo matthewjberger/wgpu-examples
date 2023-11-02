@@ -36,6 +36,10 @@ pub trait Application {
         Ok(())
     }
 
+    fn depth_format(&mut self) -> Option<wgpu::TextureFormat> {
+        None
+    }
+
     fn render<'a: 'b, 'b>(
         &'a mut self,
         _view: &'a wgpu::TextureView,
@@ -152,9 +156,11 @@ fn run_loop(
             let paint_jobs = gui.context.tessellate(shapes);
             let screen_descriptor = create_screen_descriptor(window);
             application.update(renderer, input, system)?;
+
             renderer.render_frame(
                 &textures_delta,
                 &paint_jobs,
+                application.depth_format(),
                 &screen_descriptor,
                 |view, encoder, gui| {
                     if let Ok(Some(mut render_pass)) = application.render(view, encoder) {

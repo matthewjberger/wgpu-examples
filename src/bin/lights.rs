@@ -463,6 +463,10 @@ impl Application for App {
         Ok(())
     }
 
+    fn depth_format(&mut self) -> Option<wgpu::TextureFormat> {
+        Some(Texture::DEPTH_FORMAT)
+    }
+
     fn update(&mut self, renderer: &mut Renderer, input: &Input, system: &System) -> Result<()> {
         self.camera.update(input, system)?;
         let projection_view_matrix = self.camera.projection_view_matrix(renderer.aspect_ratio());

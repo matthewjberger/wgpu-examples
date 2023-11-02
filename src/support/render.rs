@@ -4,7 +4,7 @@ use egui::{ClippedPrimitive, TexturesDelta};
 use egui_wgpu::renderer::ScreenDescriptor;
 use std::cmp::max;
 use wgpu::{
-    CommandEncoder, Device, Queue, Surface, SurfaceConfiguration, TextureFormat, TextureView,
+    CommandEncoder, Device, Queue, Surface, SurfaceConfiguration, TextureView,
     TextureViewDescriptor,
 };
 
@@ -56,6 +56,7 @@ impl Renderer {
         &mut self,
         textures_delta: &TexturesDelta,
         paint_jobs: &[ClippedPrimitive],
+        depth_format: Option<wgpu::TextureFormat>,
         screen_descriptor: &ScreenDescriptor,
         mut action: impl FnMut(&TextureView, &mut CommandEncoder, &mut GuiRender) -> Result<()>,
     ) -> Result<()> {
@@ -70,6 +71,11 @@ impl Renderer {
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("Render Encoder"),
             });
+
+        if !self.gui.initialized() {
+            self.gui
+                .initialize(&self.device, self.config.format, depth_format, 1);
+        }
 
         self.gui
             .update_textures(&self.device, &self.queue, textures_delta);
@@ -110,9 +116,7 @@ impl Renderer {
 
         let surface_capabilities = surface.get_capabilities(&adapter);
 
-        // Shader code in this tutorial assumes an sRGB surface texture. Using a different
-        // one will result all the colors coming out darker. If you want to support non
-        // sRGB surfaces, you'll need to account for that when drawing to the frame.
+        // This assumes an sRGB surface texture
         let surface_format = surface_capabilities
             .formats
             .iter()
@@ -130,16 +134,12 @@ impl Renderer {
         };
         surface.configure(&device, &config);
 
-        let depth_format = TextureFormat::Depth32Float;
-
-        let gui = GuiRender::new(&device, config.format, Some(depth_format), 1);
-
         Ok(Self {
             surface,
             device,
             queue,
             config,
-            gui,
+            gui: GuiRender::default(),
         })
     }
 

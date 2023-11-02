@@ -43,20 +43,29 @@ impl Gui {
     }
 }
 
+#[derive(Default)]
 pub struct GuiRender {
-    renderer: Renderer,
+    renderer: Option<Renderer>,
 }
 
 impl GuiRender {
-    pub fn new(
+    pub fn initialize(
+        &mut self,
         device: &Device,
         target_format: wgpu::TextureFormat,
         depth_format: Option<wgpu::TextureFormat>,
         msaa_samples: u32,
-    ) -> Self {
-        Self {
-            renderer: Renderer::new(device, target_format, depth_format, msaa_samples),
-        }
+    ) {
+        self.renderer = Some(Renderer::new(
+            device,
+            target_format,
+            depth_format,
+            msaa_samples,
+        ));
+    }
+
+    pub fn initialized(&self) -> bool {
+        self.renderer.is_some()
     }
 
     pub fn update_textures(
@@ -65,12 +74,17 @@ impl GuiRender {
         queue: &Queue,
         textures_delta: &TexturesDelta,
     ) {
+        let renderer = match self.renderer.as_mut() {
+            Some(renderer) => renderer,
+            None => return,
+        };
+
         for (id, image_delta) in &textures_delta.set {
-            self.renderer
-                .update_texture(device, queue, *id, image_delta);
+            renderer.update_texture(device, queue, *id, image_delta);
         }
+
         for id in &textures_delta.free {
-            self.renderer.free_texture(id);
+            renderer.free_texture(id);
         }
     }
 
@@ -82,8 +96,12 @@ impl GuiRender {
         screen_descriptor: &ScreenDescriptor,
         paint_jobs: &[ClippedPrimitive],
     ) {
-        self.renderer
-            .update_buffers(device, queue, encoder, paint_jobs, screen_descriptor);
+        let renderer = match self.renderer.as_mut() {
+            Some(renderer) => renderer,
+            None => return,
+        };
+
+        renderer.update_buffers(device, queue, encoder, paint_jobs, screen_descriptor);
     }
 
     pub fn render<'rp>(
@@ -92,8 +110,12 @@ impl GuiRender {
         screen_descriptor: &ScreenDescriptor,
         paint_jobs: &'rp [ClippedPrimitive],
     ) {
-        self.renderer
-            .render(render_pass, paint_jobs, screen_descriptor);
+        let renderer = match self.renderer.as_mut() {
+            Some(renderer) => renderer,
+            None => return,
+        };
+
+        renderer.render(render_pass, paint_jobs, screen_descriptor);
     }
 }
 
