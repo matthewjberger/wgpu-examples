@@ -1,7 +1,7 @@
+use crate::{Input, System, Transform};
 use anyhow::Result;
 use nalgebra_glm as glm;
-
-use crate::{Input, PerspectiveCamera, System, Transform};
+use serde::{Deserialize, Serialize};
 
 #[derive(Default)]
 pub struct MouseOrbit {
@@ -115,6 +115,41 @@ impl Default for Orientation {
             offset: glm::vec3(0.0, 0.0, 0.0),
             sensitivity: glm::vec2(1.0, 1.0),
             direction: glm::vec2(0_f32.to_radians(), 45_f32.to_radians()),
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct PerspectiveCamera {
+    pub aspect_ratio: Option<f32>,
+    pub y_fov_rad: f32,
+    pub z_far: Option<f32>,
+    pub z_near: f32,
+}
+
+impl Default for PerspectiveCamera {
+    fn default() -> Self {
+        Self {
+            aspect_ratio: None,
+            y_fov_rad: 80_f32.to_radians(),
+            z_far: None,
+            z_near: 0.1,
+        }
+    }
+}
+
+impl PerspectiveCamera {
+    pub fn projection_matrix(&self, viewport_aspect_ratio: f32) -> glm::Mat4 {
+        let aspect_ratio = if let Some(aspect_ratio) = self.aspect_ratio {
+            aspect_ratio
+        } else {
+            viewport_aspect_ratio
+        };
+
+        if let Some(z_far) = self.z_far {
+            glm::perspective_zo(aspect_ratio, self.y_fov_rad, self.z_near, z_far)
+        } else {
+            glm::infinite_perspective_rh_zo(aspect_ratio, self.y_fov_rad, self.z_near)
         }
     }
 }
