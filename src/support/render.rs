@@ -1,11 +1,10 @@
 use crate::GuiRender;
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result};
 use egui::{ClippedPrimitive, TexturesDelta};
 use egui_wgpu::renderer::ScreenDescriptor;
-use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
 use std::cmp::max;
 use wgpu::{
-    CommandEncoder, Device, Queue, Surface, SurfaceConfiguration, TextureView,
+    CommandEncoder, Device, Queue, Surface, SurfaceConfiguration, TextureFormat, TextureView,
     TextureViewDescriptor,
 };
 
@@ -39,19 +38,6 @@ impl Renderer {
         pollster::block_on(Renderer::new_async(window_handle, viewport))
     }
 
-    pub fn update(
-        &mut self,
-        textures_delta: &TexturesDelta,
-        screen_descriptor: &ScreenDescriptor,
-        paint_jobs: &[ClippedPrimitive],
-    ) -> Result<()> {
-        self.gui
-            .update_textures(&self.device, &self.queue, &textures_delta);
-        self.gui
-            .update_buffers(&self.device, &self.queue, screen_descriptor, paint_jobs);
-        Ok(())
-    }
-
     pub fn resize(&mut self, dimensions: [u32; 2]) {
         log::info!(
             "Resizing renderer surface to: ({}, {})",
@@ -68,9 +54,10 @@ impl Renderer {
 
     pub fn render_frame(
         &mut self,
+        textures_delta: &TexturesDelta,
         paint_jobs: &[ClippedPrimitive],
         screen_descriptor: &ScreenDescriptor,
-        mut action: impl FnMut(&TextureView, &mut CommandEncoder) -> Result<()>,
+        mut action: impl FnMut(&TextureView, &mut CommandEncoder, &mut GuiRender) -> Result<()>,
     ) -> Result<()> {
         let surface_texture = self.surface.get_current_texture()?;
 
@@ -84,10 +71,17 @@ impl Renderer {
                 label: Some("Render Encoder"),
             });
 
-        action(&view, &mut encoder)?;
-
         self.gui
-            .execute(&mut encoder, &view, paint_jobs, screen_descriptor, None);
+            .update_textures(&self.device, &self.queue, textures_delta);
+        self.gui.update_buffers(
+            &self.device,
+            &self.queue,
+            &mut encoder,
+            screen_descriptor,
+            paint_jobs,
+        );
+
+        action(&view, &mut encoder, &mut self.gui)?;
 
         self.queue.submit(std::iter::once(encoder.finish()));
         surface_texture.present();
@@ -136,7 +130,9 @@ impl Renderer {
         };
         surface.configure(&device, &config);
 
-        let gui = GuiRender::new(&device, config.format, 1);
+        let depth_format = TextureFormat::Depth32Float;
+
+        let gui = GuiRender::new(&device, config.format, Some(depth_format), 1);
 
         Ok(Self {
             surface,
@@ -173,7 +169,7 @@ impl Renderer {
         instance
             .request_adapter(&wgpu::RequestAdapterOptions {
                 power_preference: wgpu::PowerPreference::default(),
-                compatible_surface: Some(&surface),
+                compatible_surface: Some(surface),
                 force_fallback_adapter: false,
             })
             .await

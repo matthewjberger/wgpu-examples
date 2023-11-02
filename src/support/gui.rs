@@ -1,8 +1,8 @@
 use anyhow::Result;
 use egui::{ClippedPrimitive, Context as GuiContext, FullOutput, TexturesDelta};
-use egui_wgpu::renderer::ScreenDescriptor;
+use egui_wgpu::{renderer::ScreenDescriptor, Renderer};
 use egui_winit::{EventResponse, State};
-use wgpu::{Device, Queue, RenderPass};
+use wgpu::{CommandEncoder, Device, Queue};
 use winit::{event::WindowEvent, event_loop::EventLoopWindowTarget, window::Window};
 
 pub struct Gui {
@@ -43,16 +43,20 @@ impl Gui {
     }
 }
 
-#[derive(Default)]
 pub struct GuiRender {
-    // pub gui_renderpass: RenderPass<'static>,
+    renderer: Renderer,
 }
 
 impl GuiRender {
-    pub fn new(device: &Device, output_format: wgpu::TextureFormat, msaa_samples: u32) -> Self {
-        Self::default()
-        // let gui_renderpass = RenderPass::new(&device, output_format, msaa_samples);
-        // Self { gui_renderpass }
+    pub fn new(
+        device: &Device,
+        target_format: wgpu::TextureFormat,
+        depth_format: Option<wgpu::TextureFormat>,
+        msaa_samples: u32,
+    ) -> Self {
+        Self {
+            renderer: Renderer::new(device, target_format, depth_format, msaa_samples),
+        }
     }
 
     pub fn update_textures(
@@ -61,41 +65,35 @@ impl GuiRender {
         queue: &Queue,
         textures_delta: &TexturesDelta,
     ) {
-        // for (id, image_delta) in &textures_delta.set {
-        //     self.gui_renderpass
-        //         .update_texture(&device, &queue, *id, image_delta);
-        // }
-        // for id in &textures_delta.free {
-        //     self.gui_renderpass.free_texture(id);
-        // }
+        for (id, image_delta) in &textures_delta.set {
+            self.renderer
+                .update_texture(device, queue, *id, image_delta);
+        }
+        for id in &textures_delta.free {
+            self.renderer.free_texture(id);
+        }
     }
 
     pub fn update_buffers(
         &mut self,
         device: &Device,
         queue: &Queue,
+        encoder: &mut CommandEncoder,
         screen_descriptor: &ScreenDescriptor,
         paint_jobs: &[ClippedPrimitive],
     ) {
-        // self.gui_renderpass
-        //     .update_buffers(&device, &queue, &paint_jobs, &screen_descriptor);
+        self.renderer
+            .update_buffers(device, queue, encoder, paint_jobs, screen_descriptor);
     }
 
-    pub fn execute<'a>(
-        &'a self,
-        encoder: &mut wgpu::CommandEncoder,
-        color_attachment: &wgpu::TextureView,
-        paint_jobs: &'a [egui::epaint::ClippedPrimitive],
-        screen_descriptor: &'a ScreenDescriptor,
-        clear_color: Option<wgpu::Color>,
+    pub fn render<'rp>(
+        &'rp mut self,
+        render_pass: &mut wgpu::RenderPass<'rp>,
+        screen_descriptor: &ScreenDescriptor,
+        paint_jobs: &'rp [ClippedPrimitive],
     ) {
-        // self.gui_renderpass.execute(
-        //     encoder,
-        //     color_attachment,
-        //     paint_jobs,
-        //     screen_descriptor,
-        //     clear_color,
-        // );
+        self.renderer
+            .render(render_pass, paint_jobs, screen_descriptor);
     }
 }
 

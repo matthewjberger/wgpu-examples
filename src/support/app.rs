@@ -1,6 +1,6 @@
 use anyhow::Result;
 use egui::{Context as GuiContext, FullOutput};
-use wgpu::{CommandEncoder, TextureView};
+use wgpu::RenderPass;
 use winit::{
     dpi::PhysicalSize,
     event::{ElementState, Event, MouseButton, VirtualKeyCode, WindowEvent},
@@ -36,8 +36,12 @@ pub trait Application {
         Ok(())
     }
 
-    fn render(&mut self, _view: &TextureView, _encoder: &mut CommandEncoder) -> Result<()> {
-        Ok(())
+    fn render<'a: 'b, 'b>(
+        &'a mut self,
+        _view: &'a wgpu::TextureView,
+        _encoder: &'b mut wgpu::CommandEncoder,
+    ) -> Result<Option<RenderPass<'b>>> {
+        Ok(None)
     }
 
     fn cleanup(&mut self) -> Result<()> {
@@ -120,22 +124,21 @@ fn run_loop(
         window,
     } = resources;
 
-    // let gui_captured_event = match event {
-    //     Event::WindowEvent { event, window_id } => {
-    //         if *window_id == window.id() {
-    //             let _ = gui.handle_window_event(event);
-    //             true
-    //         } else {
-    //             false
-    //         }
-    //     }
-    //     _ => false,
-    // };
+    let gui_captured_event = match event {
+        Event::WindowEvent { event, window_id } => {
+            if *window_id == window.id() {
+                gui.handle_window_event(event).consumed
+            } else {
+                false
+            }
+        }
+        _ => false,
+    };
 
-    // if !gui_captured_event {
-    system.handle_event(event);
-    input.handle_event(event, system.window_center());
-    // }
+    if !gui_captured_event {
+        system.handle_event(event);
+        input.handle_event(event, system.window_center());
+    }
 
     match event {
         Event::MainEventsCleared => {
@@ -147,13 +150,19 @@ fn run_loop(
                 ..
             } = output;
             let paint_jobs = gui.context.tessellate(shapes);
-            let screen_descriptor = create_screen_descriptor(&window);
-            renderer.update(&textures_delta, &screen_descriptor, &paint_jobs)?;
-
+            let screen_descriptor = create_screen_descriptor(window);
             application.update(renderer, input, system)?;
-            renderer.render_frame(&paint_jobs, &screen_descriptor, |view, encoder| {
-                application.render(view, encoder)
-            })?;
+            renderer.render_frame(
+                &textures_delta,
+                &paint_jobs,
+                &screen_descriptor,
+                |view, encoder, gui| {
+                    if let Ok(Some(mut render_pass)) = application.render(view, encoder) {
+                        gui.render(&mut render_pass, &screen_descriptor, &paint_jobs);
+                    }
+                    Ok(())
+                },
+            )?;
         }
         Event::WindowEvent {
             ref event,

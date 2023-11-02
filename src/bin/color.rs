@@ -1,5 +1,6 @@
 use anyhow::Result;
 use support::{run, AppConfig, Application, Renderer};
+use wgpu::RenderPass;
 
 #[derive(Default)]
 struct App;
@@ -9,23 +10,23 @@ impl Application for App {
         egui::Window::new("wgpu")
             .resizable(false)
             .fixed_pos((10.0, 10.0))
-            .show(&context, |ui| {
+            .show(context, |ui| {
                 ui.heading("Solid Color");
             });
         Ok(())
     }
 
-    fn render(
-        &mut self,
-        view: &wgpu::TextureView,
-        encoder: &mut wgpu::CommandEncoder,
-    ) -> Result<()> {
+    fn render<'a: 'b, 'b>(
+        &'a mut self,
+        view: &'a wgpu::TextureView,
+        encoder: &'b mut wgpu::CommandEncoder,
+    ) -> Result<Option<RenderPass<'b>>> {
         encoder.insert_debug_marker("Render scene");
 
-        encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+        let render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("Render Pass"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: &view,
+                view,
                 resolve_target: None,
                 ops: wgpu::Operations {
                     load: wgpu::LoadOp::Clear(wgpu::Color {
@@ -40,13 +41,13 @@ impl Application for App {
             depth_stencil_attachment: None,
         });
 
-        Ok(())
+        Ok(Some(render_pass))
     }
 }
 
 fn main() -> Result<()> {
     run(
-        App::default(),
+        App,
         AppConfig {
             title: "Solid Color".to_string(),
             width: 800,

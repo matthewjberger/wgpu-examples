@@ -73,7 +73,7 @@ impl Instance {
         vertex_attr_array![2 => Float32x4, 3 => Float32x4, 4 => Float32x4, 5 => Float32x4].to_vec()
     }
 
-    pub fn description<'a>(attributes: &'a [VertexAttribute]) -> wgpu::VertexBufferLayout<'a> {
+    pub fn description(attributes: &[VertexAttribute]) -> wgpu::VertexBufferLayout<'_> {
         wgpu::VertexBufferLayout {
             array_stride: mem::size_of::<glm::Mat4>() as wgpu::BufferAddress,
             step_mode: wgpu::VertexStepMode::Instance,
@@ -94,7 +94,7 @@ impl Vertex {
         vertex_attr_array![0 => Float32x4, 1 => Float32x4].to_vec()
     }
 
-    pub fn description<'a>(attributes: &'a [VertexAttribute]) -> wgpu::VertexBufferLayout<'a> {
+    pub fn description(attributes: &[VertexAttribute]) -> wgpu::VertexBufferLayout<'_> {
         wgpu::VertexBufferLayout {
             array_stride: mem::size_of::<Vertex>() as wgpu::BufferAddress,
             step_mode: wgpu::VertexStepMode::Vertex,
@@ -375,7 +375,7 @@ impl Application for App {
         egui::Window::new("wgpu")
             .resizable(false)
             .fixed_pos((10.0, 10.0))
-            .show(&context, |ui| {
+            .show(context, |ui| {
                 ui.heading("Instancing");
             });
         Ok(())
@@ -390,52 +390,47 @@ impl Application for App {
         Ok(())
     }
 
-    fn render(
-        &mut self,
-        view: &wgpu::TextureView,
-        encoder: &mut wgpu::CommandEncoder,
-    ) -> Result<()> {
+    fn render<'a: 'b, 'b>(
+        &'a mut self,
+        view: &'a wgpu::TextureView,
+        encoder: &'b mut wgpu::CommandEncoder,
+    ) -> Result<Option<RenderPass<'b>>> {
         encoder.insert_debug_marker("Render scene");
 
-        {
-            let depth_stencil_attachment = if let Some(depth_texture) = self.depth_texture.as_ref()
-            {
-                Some(wgpu::RenderPassDepthStencilAttachment {
-                    view: &depth_texture.view,
-                    depth_ops: Some(wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(1.0),
-                        store: true,
-                    }),
-                    stencil_ops: None,
-                })
-            } else {
-                None
-            };
-
-            let mut renderpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("Render Pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &view,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color {
-                            r: 0.1,
-                            g: 0.2,
-                            b: 0.3,
-                            a: 1.0,
-                        }),
-                        store: true,
-                    },
-                })],
-                depth_stencil_attachment,
-            });
-
-            if let Some(scene) = self.scene.as_ref() {
-                scene.render(&mut renderpass);
+        let depth_stencil_attachment = self.depth_texture.as_ref().map(|depth_texture| {
+            wgpu::RenderPassDepthStencilAttachment {
+                view: &depth_texture.view,
+                depth_ops: Some(wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(1.0),
+                    store: true,
+                }),
+                stencil_ops: None,
             }
+        });
+
+        let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("Render Pass"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(wgpu::Color {
+                        r: 0.1,
+                        g: 0.2,
+                        b: 0.3,
+                        a: 1.0,
+                    }),
+                    store: true,
+                },
+            })],
+            depth_stencil_attachment,
+        });
+
+        if let Some(scene) = self.scene.as_ref() {
+            scene.render(&mut render_pass);
         }
 
-        Ok(())
+        Ok(Some(render_pass))
     }
 }
 
