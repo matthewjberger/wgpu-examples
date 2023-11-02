@@ -120,21 +120,22 @@ fn run_loop(
         window,
     } = resources;
 
-    let gui_captured_event = match event {
-        Event::WindowEvent { event, window_id } => {
-            if *window_id == window.id() {
-                gui.handle_window_event(event)
-            } else {
-                false
-            }
-        }
-        _ => false,
-    };
+    // let gui_captured_event = match event {
+    //     Event::WindowEvent { event, window_id } => {
+    //         if *window_id == window.id() {
+    //             let _ = gui.handle_window_event(event);
+    //             true
+    //         } else {
+    //             false
+    //         }
+    //     }
+    //     _ => false,
+    // };
 
-    if !gui_captured_event {
-        system.handle_event(event);
-        input.handle_event(event, system.window_center());
-    }
+    // if !gui_captured_event {
+    system.handle_event(event);
+    input.handle_event(event, system.window_center());
+    // }
 
     match event {
         Event::MainEventsCleared => {

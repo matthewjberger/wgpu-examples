@@ -2,7 +2,7 @@ use crate::GuiRender;
 use anyhow::{anyhow, Context, Result};
 use egui::{ClippedPrimitive, TexturesDelta};
 use egui_wgpu::renderer::ScreenDescriptor;
-use raw_window_handle::HasRawWindowHandle;
+use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
 use std::cmp::max;
 use wgpu::{
     CommandEncoder, Device, Queue, Surface, SurfaceConfiguration, TextureView,
@@ -32,7 +32,10 @@ pub struct Renderer {
 }
 
 impl Renderer {
-    pub fn new(window_handle: &impl HasRawWindowHandle, viewport: &Viewport) -> Result<Self> {
+    pub fn new<W>(window_handle: &W, viewport: &Viewport) -> Result<Self>
+    where
+        W: raw_window_handle::HasRawWindowHandle + raw_window_handle::HasRawDisplayHandle,
+    {
         pollster::block_on(Renderer::new_async(window_handle, viewport))
     }
 
@@ -96,29 +99,40 @@ impl Renderer {
         self.config.width as f32 / std::cmp::max(1, self.config.height) as f32
     }
 
-    async fn new_async(
-        window_handle: &impl HasRawWindowHandle,
-        viewport: &Viewport,
-    ) -> Result<Self> {
-        let instance = wgpu::Instance::new(Self::backends());
+    async fn new_async<W>(window_handle: &W, viewport: &Viewport) -> Result<Self>
+    where
+        W: raw_window_handle::HasRawWindowHandle + raw_window_handle::HasRawDisplayHandle,
+    {
+        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
+            backends: Self::backends(),
+            ..Default::default()
+        });
 
-        let surface = unsafe { instance.create_surface(window_handle) };
+        let surface = unsafe { instance.create_surface(&window_handle) }.unwrap();
 
-        let adapter = Self::create_adapter(&instance, &surface).await?;
+        let adapter = Self::create_adapter(&instance, &surface).await.unwrap();
 
         let (device, queue) = Self::request_device(&adapter).await?;
 
-        let swapchain_format = *surface
-            .get_supported_formats(&adapter)
-            .first()
-            .ok_or(anyhow!("Failed to find a support swapchain format!"))?;
+        let surface_capabilities = surface.get_capabilities(&adapter);
 
+        // Shader code in this tutorial assumes an sRGB surface texture. Using a different
+        // one will result all the colors coming out darker. If you want to support non
+        // sRGB surfaces, you'll need to account for that when drawing to the frame.
+        let surface_format = surface_capabilities
+            .formats
+            .iter()
+            .copied()
+            .find(|f| f.is_srgb())
+            .unwrap_or(surface_capabilities.formats[0]);
         let config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-            format: swapchain_format,
+            format: surface_format,
             width: viewport.width,
             height: viewport.height,
-            present_mode: wgpu::PresentMode::Fifo,
+            present_mode: surface_capabilities.present_modes[0],
+            alpha_mode: surface_capabilities.alpha_modes[0],
+            view_formats: vec![],
         };
         surface.configure(&device, &config);
 
@@ -155,14 +169,14 @@ impl Renderer {
     async fn create_adapter(
         instance: &wgpu::Instance,
         surface: &wgpu::Surface,
-    ) -> Result<wgpu::Adapter> {
-        wgpu::util::initialize_adapter_from_env_or_default(
-            instance,
-            Self::backends(),
-            Some(surface),
-        )
-        .await
-        .context("No suitable GPU adapters found on the system!")
+    ) -> Option<wgpu::Adapter> {
+        instance
+            .request_adapter(&wgpu::RequestAdapterOptions {
+                power_preference: wgpu::PowerPreference::default(),
+                compatible_surface: Some(&surface),
+                force_fallback_adapter: false,
+            })
+            .await
     }
 
     async fn request_device(adapter: &wgpu::Adapter) -> Result<(wgpu::Device, wgpu::Queue)> {
