@@ -16,7 +16,7 @@ struct InstanceBinding {
 
 impl InstanceBinding {
     pub fn new(device: &Device) -> Self {
-        let num_instances_per_row: u32 = 10;
+        let num_instances_per_row: u32 = 1000;
         let instance_displacement: glm::Vec3 = glm::vec3(
             num_instances_per_row as f32,
             0.0,
