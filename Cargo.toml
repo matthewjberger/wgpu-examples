@@ -9,7 +9,7 @@ bytemuck = "1.14.0"
 egui = "0.23.0"
 egui-wgpu = { version = "0.23.0", features = ["winit"] }
 egui-winit = "0.23.0"
-env_logger = "0.10.0"
+env_logger = "0.10.1"
 image = "0.24.7"
 log = "0.4.20"
 nalgebra = "0.32.3"
@@ -18,10 +18,10 @@ nalgebra-glm = { version = "0.18.0", features = [
     "serde-serialize",
 ] }
 pollster = "0.3.0"
-raw-window-handle = "0.5.0"
-serde = "1.0.190"
-wgpu = "0.17.0"
-winit = "0.28.0"
+raw-window-handle = "0.5.2"
+serde = "1.0.192"
+wgpu = "0.17.1"
+winit = "0.28.7"
 
 [lib]
 name = "support"
