@@ -17,9 +17,10 @@ nalgebra-glm = { version = "0.18.0", features = [
     "convert-bytemuck",
     "serde-serialize",
 ] }
+petgraph = { version = "0.6.4", features = ["serde-1"] }
 pollster = "0.3.0"
 raw-window-handle = "0.5.2"
-serde = "1.0.192"
+serde = { version = "1.0.192", features = ["derive"] }
 wgpu = "0.17.1"
 winit = "0.28.7"
 
