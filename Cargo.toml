@@ -27,3 +27,6 @@ winit = "0.28.7"
 [lib]
 name = "support"
 path = "src/support/lib.rs"
+
+[dev-dependencies]
+serde_json = "1.0.108"
