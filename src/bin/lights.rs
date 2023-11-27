@@ -476,7 +476,7 @@ impl Application for App {
 		Ok(())
 	}
 
-	fn update_gui(&mut self, renderer: &mut Renderer, context: &mut egui::Context) -> Result<()> {
+	fn ui(&mut self, renderer: &mut Renderer, context: &mut egui::Context) -> Result<()> {
 		egui::Window::new("wgpu")
 			.resizable(false)
 			.fixed_pos((10.0, 10.0))

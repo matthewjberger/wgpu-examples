@@ -28,7 +28,7 @@ pub trait Application {
 		Ok(())
 	}
 
-	fn update_gui(&mut self, _renderer: &mut Renderer, _context: &mut GuiContext) -> Result<()> {
+	fn ui(&mut self, _renderer: &mut Renderer, _context: &mut GuiContext) -> Result<()> {
 		Ok(())
 	}
 
@@ -146,8 +146,7 @@ fn run_loop(
 
 	match event {
 		Event::MainEventsCleared => {
-			let output =
-				gui.create_frame(window, |context| application.update_gui(renderer, context))?;
+			let output = gui.create_frame(window, |context| application.ui(renderer, context))?;
 			let FullOutput {
 				textures_delta,
 				shapes,
