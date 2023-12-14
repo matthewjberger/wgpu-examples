@@ -1,76 +1,72 @@
-use petgraph::Graph;
-use serde::{Deserialize, Serialize};
-
 use crate::Transform;
+use nalgebra_glm as glm;
+use petgraph::graph::{DiGraph, NodeIndex};
+use serde::{Deserialize, Serialize};
+use std::ops::{Deref, DerefMut, Mul};
 
-/// A node in the scene graph.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SceneGraphNode {
-	transform: Transform,
-	node: Node,
+pub struct SceneGraphNode<T> {
+	pub transform: Transform,
+	pub node: T,
 }
 
-/// The data associated with a node in the scene graph.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum Node {
-	Empty,
-	Mesh(String),
-}
+pub struct SceneGraph<T>(DiGraph<SceneGraphNode<T>, ()>);
 
-/// The index of a node in the scene graph.
-pub type NodeIndex = petgraph::graph::NodeIndex;
+impl<T> Deref for SceneGraph<T> {
+	type Target = DiGraph<SceneGraphNode<T>, ()>;
 
-/// The scene graph.
-pub type SceneGraph = Graph<SceneGraphNode, ()>;
-
-/// A builder for the scene graph.
-#[derive(Default)]
-pub struct SceneGraphBuilder {
-	graph: SceneGraph,
-}
-
-impl SceneGraphBuilder {
-	pub fn new() -> Self {
-		Self::default()
-	}
-
-	pub fn add_node(&mut self, node: SceneGraphNode) -> NodeIndex {
-		self.graph.add_node(node)
-	}
-
-	pub fn add_edge(&mut self, parent: NodeIndex, child: NodeIndex) {
-		self.graph.add_edge(parent, child, ());
-	}
-
-	pub fn build(self) -> SceneGraph {
-		self.graph
+	fn deref(&self) -> &Self::Target {
+		&self.0
 	}
 }
 
-mod tests {
-	#[test]
-	fn test() {
-		use super::*;
+impl<T> DerefMut for SceneGraph<T> {
+	fn deref_mut(&mut self) -> &mut Self::Target {
+		&mut self.0
+	}
+}
 
-		let mut builder = SceneGraphBuilder::new();
+impl Mul for Transform {
+	type Output = Self;
 
-		let root = builder.add_node(SceneGraphNode {
-			transform: Transform::default(),
-			node: Node::Empty,
-		});
+	fn mul(self, rhs: Self) -> Self::Output {
+		let scale = glm::vec3(
+			self.scale.x * rhs.scale.x,
+			self.scale.y * rhs.scale.y,
+			self.scale.z * rhs.scale.z,
+		);
 
-		let child = builder.add_node(SceneGraphNode {
-			transform: Transform::default(),
-			node: Node::Mesh("Mesh1".to_string()),
-		});
+		let rotation = self.rotation * rhs.rotation;
 
-		builder.add_edge(root, child);
+		let translation =
+			self.translation + glm::quat_rotate_vec3(&self.rotation, &rhs.translation);
 
-		let graph = builder.build();
+		Self {
+			translation,
+			rotation,
+			scale,
+		}
+	}
+}
 
-		println!("{graph:#?}");
+impl<T> SceneGraph<T> {
+	pub fn find_node<F>(&self, mut predicate: F) -> Option<NodeIndex>
+	where
+		F: FnMut(&SceneGraphNode<T>) -> bool,
+	{
+		self.node_indices().find(|&index| predicate(&self[index]))
+	}
 
-		assert_eq!(graph.node_count(), 2);
-		assert_eq!(graph.edge_count(), 1);
+	pub fn global_transform(&self, node: NodeIndex) -> Transform {
+		let mut transform = Transform::default();
+		let mut current = node;
+		while let Some(parent) = self
+			.neighbors_directed(current, petgraph::Direction::Incoming)
+			.next()
+		{
+			transform = self[current].transform;
+			current = parent;
+		}
+		transform
 	}
 }

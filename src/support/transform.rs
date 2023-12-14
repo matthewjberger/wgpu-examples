@@ -1,4 +1,4 @@
-use nalgebra::{linalg::QR, Isometry3, Translation3, UnitQuaternion};
+use nalgebra::{Isometry3, Translation3, UnitQuaternion};
 use nalgebra_glm as glm;
 use serde::{Deserialize, Serialize};
 
@@ -41,23 +41,6 @@ impl Transform {
 		)
 	}
 
-	/// Decomposes a 4x4 augmented rotation matrix without shear into translation, rotation, and scaling components
-	fn decompose_matrix(transform: glm::Mat4) -> (glm::Vec3, glm::Quat, glm::Vec3) {
-		let translation = glm::vec3(transform.m14, transform.m24, transform.m34);
-
-		let qr_decomposition = QR::new(transform);
-		let rotation = glm::to_quat(&qr_decomposition.q());
-
-		let scale = transform.m44
-			* glm::vec3(
-				(transform.m11.powi(2) + transform.m21.powi(2) + transform.m31.powi(2)).sqrt(),
-				(transform.m12.powi(2) + transform.m22.powi(2) + transform.m32.powi(2)).sqrt(),
-				(transform.m13.powi(2) + transform.m23.powi(2) + transform.m33.powi(2)).sqrt(),
-			);
-
-		(translation, rotation, scale)
-	}
-
 	pub fn as_view_matrix(&self) -> glm::Mat4 {
 		let eye = self.translation;
 		let target = self.translation + self.forward();
@@ -85,16 +68,5 @@ impl Transform {
 
 	pub fn look_at(&mut self, target: &glm::Vec3, up: &glm::Vec3) {
 		self.rotation = glm::quat_conjugate(&glm::quat_look_at(target, up));
-	}
-}
-
-impl From<glm::Mat4> for Transform {
-	fn from(matrix: glm::Mat4) -> Self {
-		let (translation, rotation, scale) = Self::decompose_matrix(matrix);
-		Self {
-			translation,
-			rotation,
-			scale,
-		}
 	}
 }
