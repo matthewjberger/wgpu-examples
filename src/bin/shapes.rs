@@ -442,9 +442,9 @@ fn main() -> Result<()> {
     run(
         App::default(),
         AppConfig {
-            title: "Instancing".to_string(),
-            width: 800,
-            height: 600,
+            title: "Shapes".to_string(),
+            width: 1920,
+            height: 1080,
         },
     )
 }
