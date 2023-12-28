@@ -1,4 +1,4 @@
-use crate::{Input, System, Transform};
+use crate::{Input, Mouse, System, Transform};
 use anyhow::Result;
 use nalgebra_glm as glm;
 use serde::{Deserialize, Serialize};
@@ -12,19 +12,27 @@ pub struct MouseOrbit {
 
 impl MouseOrbit {
     pub fn update(&mut self, input: &Input, system: &System) -> Result<()> {
+        let Input { mouse, .. } = input;
+        let Mouse {
+            position_delta,
+            wheel_delta,
+            ..
+        } = mouse;
+        let System { delta_time, .. } = *system;
+
         self.orientation
-            .zoom(2.0 * input.mouse.wheel_delta.y * system.delta_time as f32);
+            .zoom(2.0 * wheel_delta.y * delta_time as f32);
 
         if input.mouse.is_left_clicked {
-            let mut delta = input.mouse.position_delta;
-            delta.x = -1.0 * input.mouse.position_delta.x;
-            delta *= system.delta_time as f32;
+            let mut delta = *position_delta;
+            delta.x = -1.0 * position_delta.x;
+            delta *= delta_time as f32;
             self.orientation.rotate(&delta);
         }
 
         if input.mouse.is_right_clicked {
             self.orientation
-                .pan(&(input.mouse.position_delta * system.delta_time as f32))
+                .pan(&(input.mouse.position_delta * delta_time as f32))
         }
 
         self.transform.translation = self.orientation.position();
