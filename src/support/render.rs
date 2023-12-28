@@ -159,7 +159,7 @@ impl Renderer {
     }
 
     fn optional_features() -> wgpu::Features {
-        wgpu::Features::empty()
+        wgpu::Features::all()
     }
 
     async fn create_adapter(
