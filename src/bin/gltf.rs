@@ -356,10 +356,16 @@ impl Application for App {
 }
 
 fn draw_scene_tree_ui<'a>(ui: &mut egui::Ui, scene: gltf::Scene<'a>) {
-    let name = format!("Scene: {}", scene.name().unwrap_or("Unnamed Scene"));
-    egui::collapsing_header::CollapsingHeader::new(&name)
-        .id_source(ui.next_auto_id())
-        .show(ui, |ui| {
+    let name = scene.name().unwrap_or("Unnamed Scene");
+    let id = ui.make_persistent_id(ui.next_auto_id());
+    egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), id, true)
+        .show_header(ui, |ui| {
+            let response = ui.selectable_label(false, format!("🎬 {name}"));
+            if response.clicked() {
+                println!("Scene selected: {name}");
+            }
+        })
+        .body(|ui| {
             draw_scene_ui(ui, scene);
         });
 }
@@ -371,19 +377,31 @@ fn draw_scene_ui(ui: &mut egui::Ui, gltf_scene: gltf::Scene<'_>) {
 }
 
 fn draw_gltf_node_ui(ui: &mut egui::Ui, node: gltf::Node<'_>) {
-    let name = format!("Node: {}", node.name().unwrap_or("Unnamed Node"));
+    let name = node.name().unwrap_or("Unnamed Node");
 
-    if node.children().len() == 0 {
-        ui.label(&name);
+    let is_leaf = node.children().len() == 0;
+    if is_leaf {
+        node_ui(ui, &name, true);
     }
 
     node.children().for_each(|child| {
-        egui::collapsing_header::CollapsingHeader::new(&name)
-            .id_source(ui.next_auto_id())
-            .show(ui, |ui| {
+        let id = ui.make_persistent_id(ui.next_auto_id());
+        egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), id, true)
+            .show_header(ui, |ui| {
+                node_ui(ui, &name, false);
+            })
+            .body(|ui| {
                 draw_gltf_node_ui(ui, child);
             });
     });
+}
+
+fn node_ui(ui: &mut egui::Ui, name: &str, is_leaf: bool) {
+    let prefix = if is_leaf { "\t⭕" } else { "🔴" };
+    let response = ui.selectable_label(false, format!("{prefix} {name}"));
+    if response.clicked() {
+        println!("Scene selected: {name}");
+    }
 }
 
 impl App {
