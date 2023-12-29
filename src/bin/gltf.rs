@@ -300,16 +300,13 @@ impl Application for App {
                             });
                         });
 
-                        // gltf.meshes().for_each(|mesh| {
-                        //     let response = egui::CollapsingHeader::new(format!(
-                        //         "{}",
-                        //         mesh.name().unwrap_or("Unnamed")
-                        //     ))
-                        //     .show(ui, |ui| ui.label("body"));
-                        //     response.header_response.context_menu(|ui| {
-                        //         ui.label("Shown on right-clicks");
-                        //     });
-                        // });
+                        ui.separator();
+
+                        ui.collapsing("Meshes", |ui| {
+                            gltf.meshes().for_each(|gltf_mesh| {
+                                draw_mesh_ui(ui, gltf_mesh);
+                            });
+                        });
                     });
             });
 
@@ -352,6 +349,14 @@ impl Application for App {
         }
 
         Ok(Some(render_pass))
+    }
+}
+
+fn draw_mesh_ui<'a>(ui: &mut egui::Ui, mesh: gltf::Mesh<'a>) {
+    let name = mesh.name().unwrap_or("Unnamed Mesh");
+    let response = ui.selectable_label(false, format!("🔶{name}"));
+    if response.clicked() {
+        println!("Mesh selected: {name}");
     }
 }
 
@@ -400,8 +405,11 @@ fn node_ui(ui: &mut egui::Ui, name: &str, is_leaf: bool) {
     let prefix = if is_leaf { "\t⭕" } else { "🔴" };
     let response = ui.selectable_label(false, format!("{prefix} {name}"));
     if response.clicked() {
-        println!("Scene selected: {name}");
+        println!("Node selected: {name}");
     }
+    response.context_menu(|ui| {
+        ui.label("Shown on right-clicks");
+    });
 }
 
 impl App {
