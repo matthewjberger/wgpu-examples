@@ -1,7 +1,7 @@
 use anyhow::Result;
 use gltf::Gltf;
 use nalgebra_glm as glm;
-use std::{borrow::Cow, mem};
+use std::{borrow::Cow, mem, path::Path};
 use support::{run, AppConfig, Application, Geometry, Input, Renderer, System};
 use wgpu::{
     util::DeviceExt, vertex_attr_array, BindGroup, BindGroupLayout, Buffer, BufferAddress, Device,
@@ -143,7 +143,7 @@ fn fragment_main(in: VertexOutput) -> @location(0) vec4<f32> {
 ";
 
 struct Scene {
-    pub gltf: gltf::Gltf,
+    pub gltf: Option<gltf::Gltf>,
     pub model: glm::Mat4,
     pub geometry: Geometry,
     pub uniform: UniformBinding,
@@ -155,24 +155,12 @@ impl Scene {
         let uniform = UniformBinding::new(device);
         let pipeline = Self::create_pipeline(device, surface_format, &uniform);
 
-        let gltf = Gltf::open("assets/DamagedHelmet.glb").expect("Failed to open gltf file");
-
-        for scene in gltf.scenes() {
-            println!("Scene: {}", scene.name().unwrap_or("Unnamed"));
-            for node in scene.nodes() {
-                println!("Node: {}", node.name().unwrap_or("Unnamed"));
-                for child in node.children() {
-                    println!("Child: {}", child.name().unwrap_or("Unnamed"));
-                }
-            }
-        }
-
         let vertices = VERTICES.to_vec();
         let indices = INDICES.to_vec();
         let geometry = Geometry::new(device, &vertices, &indices);
 
         Self {
-            gltf,
+            gltf: None,
             model: glm::Mat4::identity(),
             geometry,
             uniform,
@@ -207,6 +195,10 @@ impl Scene {
                 mvp: projection * view * self.model,
             },
         )
+    }
+
+    pub fn load_asset(&mut self, gltf: &Gltf) {
+        self.gltf = Some(gltf.clone());
     }
 
     fn create_pipeline(
@@ -281,58 +273,26 @@ impl Application for App {
     }
 
     fn update_gui(&mut self, _renderer: &mut Renderer, context: &mut egui::Context) -> Result<()> {
-        egui::Window::new("wgpu")
+        egui::Window::new("GLTF Asset")
             .resizable(false)
             .fixed_pos((10.0, 10.0))
             .show(context, |ui| {
-                ui.heading("Uniforms");
-
                 if ui.button("Import GLTF/GLB...").clicked() {
-                    if let Some(path) = rfd::FileDialog::new()
-                        .add_filter("GLTF / GLB", &["gltf", "glb"])
-                        .pick_file()
-                    {
-                        println!("File picked: {path:#?}");
-                        let bytes = match std::fs::read(&path) {
-                            Ok(bytes) => bytes,
-                            Err(error) => {
-                                eprintln!("{error}");
-                                return;
-                            }
-                        };
-                        println!("Loaded {} bytes", bytes.len());
-
-                        let gltf = Gltf::from_slice(&bytes).expect("Failed to load GLTF!");
-                    }
+                    self.pick_gltf_file();
                 }
-                if let Some(scene) = self.scene.as_ref() {
-                    for scene in scene.gltf.scenes() {
-                        egui::collapsing_header::CollapsingHeader::new("Scene").show(ui, |ui| {
-                            ui.label(format!("Scene: {}", scene.name().unwrap_or("Unnamed")));
-                            for node in scene.nodes() {
-                                egui::collapsing_header::CollapsingHeader::new("Node").show(
-                                    ui,
-                                    |ui| {
-                                        ui.label(format!(
-                                            "Node: {}",
-                                            node.name().unwrap_or("Unnamed")
-                                        ));
 
-                                        for child in node.children() {
-                                            egui::collapsing_header::CollapsingHeader::new("Child")
-                                                .show(ui, |ui| {
-                                                    ui.label(format!(
-                                                        "Child: {}",
-                                                        child.name().unwrap_or("Unnamed")
-                                                    ));
-                                                });
-                                        }
-                                    },
-                                );
-                            }
+                ui.separator();
+
+                ui.heading("Asset Info");
+
+                self.scene
+                    .as_ref()
+                    .and_then(|scene| scene.gltf.as_ref())
+                    .map(|gltf| {
+                        gltf.scenes().for_each(|gltf_scene| {
+                            draw_scene_tree_ui(ui, gltf_scene);
                         });
-                    }
-                }
+                    });
             });
         Ok(())
     }
@@ -367,6 +327,62 @@ impl Application for App {
         }
 
         Ok(Some(render_pass))
+    }
+}
+
+fn draw_scene_tree_ui<'a>(ui: &mut egui::Ui, gltf_scene: gltf::Scene<'a>) {
+    egui::collapsing_header::CollapsingHeader::new("Scene")
+        .id_source(ui.next_auto_id())
+        .show(ui, |ui| {
+            draw_scene_ui(ui, gltf_scene);
+        });
+}
+
+fn draw_scene_ui(ui: &mut egui::Ui, gltf_scene: gltf::Scene<'_>) {
+    gltf_scene.nodes().for_each(|node| {
+        draw_gltf_node_ui(ui, node);
+    });
+}
+
+fn draw_gltf_node_ui(ui: &mut egui::Ui, node: gltf::Node<'_>) {
+    if node.children().len() == 0 {
+        ui.label(node.name().unwrap_or("Unnamed"));
+    }
+
+    node.children().for_each(|child| {
+        egui::collapsing_header::CollapsingHeader::new(node.name().unwrap_or("Unnamed"))
+            .id_source(ui.next_auto_id())
+            .show(ui, |ui| {
+                draw_gltf_node_ui(ui, child);
+            });
+    });
+}
+
+impl App {
+    fn pick_gltf_file(&mut self) {
+        if let Some(path) = rfd::FileDialog::new()
+            .add_filter("GLTF / GLB", &["gltf", "glb"])
+            .pick_file()
+        {
+            self.load_gltf_file(path);
+        }
+    }
+
+    fn load_gltf_file(&mut self, path: impl AsRef<Path>) {
+        let path = path.as_ref();
+        println!("File picked: {path:#?}");
+        match std::fs::read(&path) {
+            Ok(bytes) => {
+                println!("Loaded {} bytes", bytes.len());
+                let gltf = Gltf::from_slice(&bytes).expect("Failed to load GLTF!");
+                if let Some(scene) = self.scene.as_mut() {
+                    scene.load_asset(&gltf);
+                }
+            }
+            Err(error) => {
+                eprintln!("{error}");
+            }
+        };
     }
 }
 
