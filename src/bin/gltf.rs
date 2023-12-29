@@ -273,27 +273,52 @@ impl Application for App {
     }
 
     fn update_gui(&mut self, _renderer: &mut Renderer, context: &mut egui::Context) -> Result<()> {
-        egui::Window::new("GLTF Asset")
-            .resizable(false)
-            .fixed_pos((10.0, 10.0))
+        egui::TopBottomPanel::top("top_panel")
+            .resizable(true)
             .show(context, |ui| {
-                if ui.button("Import GLTF/GLB...").clicked() {
-                    self.pick_gltf_file();
-                }
+                egui::menu::bar(ui, |ui| {
+                    egui::global_dark_light_mode_switch(ui);
+                    ui.menu_button("File", |ui| {
+                        if ui.button("Import asset (gltf/glb)...").clicked() {
+                            self.pick_gltf_file();
+                            ui.close_menu();
+                        }
+                    });
+                });
+            });
 
-                ui.separator();
-
-                ui.heading("Asset Info");
-
+        egui::SidePanel::left("left_panel")
+            .resizable(true)
+            .show(context, |ui| {
                 self.scene
                     .as_ref()
                     .and_then(|scene| scene.gltf.as_ref())
                     .map(|gltf| {
-                        gltf.scenes().for_each(|gltf_scene| {
-                            draw_scene_tree_ui(ui, gltf_scene);
+                        ui.collapsing("Scenes", |ui| {
+                            gltf.scenes().for_each(|gltf_scene| {
+                                draw_scene_tree_ui(ui, gltf_scene);
+                            });
                         });
+
+                        // gltf.meshes().for_each(|mesh| {
+                        //     let response = egui::CollapsingHeader::new(format!(
+                        //         "{}",
+                        //         mesh.name().unwrap_or("Unnamed")
+                        //     ))
+                        //     .show(ui, |ui| ui.label("body"));
+                        //     response.header_response.context_menu(|ui| {
+                        //         ui.label("Shown on right-clicks");
+                        //     });
+                        // });
                     });
             });
+
+        egui::SidePanel::right("right_panel")
+            .resizable(true)
+            .show(context, |ui| {
+                ui.heading("Inspector");
+            });
+
         Ok(())
     }
 
@@ -330,11 +355,12 @@ impl Application for App {
     }
 }
 
-fn draw_scene_tree_ui<'a>(ui: &mut egui::Ui, gltf_scene: gltf::Scene<'a>) {
-    egui::collapsing_header::CollapsingHeader::new("Scene")
+fn draw_scene_tree_ui<'a>(ui: &mut egui::Ui, scene: gltf::Scene<'a>) {
+    let name = format!("Scene: {}", scene.name().unwrap_or("Unnamed Scene"));
+    egui::collapsing_header::CollapsingHeader::new(&name)
         .id_source(ui.next_auto_id())
         .show(ui, |ui| {
-            draw_scene_ui(ui, gltf_scene);
+            draw_scene_ui(ui, scene);
         });
 }
 
@@ -345,12 +371,14 @@ fn draw_scene_ui(ui: &mut egui::Ui, gltf_scene: gltf::Scene<'_>) {
 }
 
 fn draw_gltf_node_ui(ui: &mut egui::Ui, node: gltf::Node<'_>) {
+    let name = format!("Node: {}", node.name().unwrap_or("Unnamed Node"));
+
     if node.children().len() == 0 {
-        ui.label(node.name().unwrap_or("Unnamed"));
+        ui.label(&name);
     }
 
     node.children().for_each(|child| {
-        egui::collapsing_header::CollapsingHeader::new(node.name().unwrap_or("Unnamed"))
+        egui::collapsing_header::CollapsingHeader::new(&name)
             .id_source(ui.next_auto_id())
             .show(ui, |ui| {
                 draw_gltf_node_ui(ui, child);
