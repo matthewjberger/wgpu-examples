@@ -6,8 +6,46 @@ use support::{
 };
 use wgpu::{
     util::DeviceExt, vertex_attr_array, BindGroup, BindGroupLayout, Buffer, BufferAddress, Device,
-    Queue, RenderPass, RenderPipeline, TextureFormat, VertexAttribute,
+    PolygonMode, Queue, RenderPass, RenderPipeline, TextureFormat, VertexAttribute,
 };
+
+pub struct ShapeGeometry {
+    geometry: Geometry,
+}
+
+impl ShapeGeometry {
+    pub const VERTICES: [Vertex; 4] = [
+        Vertex {
+            position: [1.0, -1.0, 0.0, 1.0],
+            color: [1.0, 0.0, 0.0, 1.0],
+        },
+        Vertex {
+            position: [-1.0, -1.0, 0.0, 1.0],
+            color: [0.0, 1.0, 0.0, 1.0],
+        },
+        Vertex {
+            position: [1.0, 1.0, 0.0, 1.0],
+            color: [0.0, 0.0, 1.0, 1.0],
+        },
+        Vertex {
+            position: [-1.0, 1.0, 0.0, 1.0],
+            color: [1.0, 0.5, 1.0, 1.0],
+        },
+    ];
+
+    // Clockwise winding order
+    pub const INDICES: [u32; 6] = [0, 1, 2, 1, 2, 3];
+
+    fn new(device: &Device) -> Self {
+        Self {
+            geometry: Geometry::new(device, &Self::VERTICES, &Self::INDICES),
+        }
+    }
+
+    pub fn geometry(&self) -> &Geometry {
+        &self.geometry
+    }
+}
 
 fn create_instances() -> Vec<Instance> {
     let num_instances_per_row: u32 = 1000;
@@ -62,7 +100,7 @@ impl Instance {
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
-struct Vertex {
+pub struct Vertex {
     position: [f32; 4],
     color: [f32; 4],
 }
@@ -145,23 +183,6 @@ impl UniformBinding {
     }
 }
 
-const VERTICES: [Vertex; 3] = [
-    Vertex {
-        position: [1.0, -1.0, 0.0, 1.0],
-        color: [1.0, 0.0, 0.0, 1.0],
-    },
-    Vertex {
-        position: [-1.0, -1.0, 0.0, 1.0],
-        color: [0.0, 1.0, 0.0, 1.0],
-    },
-    Vertex {
-        position: [0.0, 1.0, 0.0, 1.0],
-        color: [0.0, 0.0, 1.0, 1.0],
-    },
-];
-
-const INDICES: [u32; 3] = [0, 1, 2]; // Clockwise winding order
-
 const SHADER_SOURCE: &str = "
 struct InstanceInput {
     @location(2) model_matrix_0: vec4<f32>,
@@ -212,18 +233,26 @@ fn fragment_main(in: VertexOutput) -> @location(0) vec4<f32> {
 ";
 
 struct Scene {
-    pub geometry: Geometry,
+    pub shape_geometry: ShapeGeometry,
     pub instance: Buffer,
-    pub pipeline: RenderPipeline,
+    pub pipeline_filled: RenderPipeline,
+    pub pipeline_lines: RenderPipeline,
     pub uniform: UniformBinding,
     pub instances: Vec<Instance>,
 }
 
 impl Scene {
     pub fn new(device: &Device, surface_format: TextureFormat) -> Self {
-        let geometry = Geometry::new(device, &VERTICES, &INDICES);
+        let shape_geometry = ShapeGeometry::new(device);
         let uniform = UniformBinding::new(device);
-        let pipeline = Self::create_pipeline(device, surface_format, &uniform);
+
+        let primitive_state = Self::primitive_state(wgpu::PolygonMode::Fill);
+        let pipeline_filled =
+            Self::create_pipeline(device, surface_format, &uniform, &primitive_state);
+
+        let primitive_state = Self::primitive_state(wgpu::PolygonMode::Line);
+        let pipeline_lines =
+            Self::create_pipeline(device, surface_format, &uniform, &primitive_state);
 
         let instances = create_instances();
 
@@ -241,24 +270,29 @@ impl Scene {
         let instance = device.create_buffer_init(&instance_descriptor);
 
         Self {
-            geometry,
+            shape_geometry,
             instance,
             uniform,
-            pipeline,
+            pipeline_filled,
+            pipeline_lines,
             instances,
         }
     }
 
     pub fn render<'rpass>(&'rpass self, renderpass: &mut RenderPass<'rpass>) {
-        renderpass.set_pipeline(&self.pipeline);
         renderpass.set_bind_group(0, &self.uniform.bind_group, &[]);
 
-        let (vertex_buffer_slice, index_buffer_slice) = self.geometry.slices();
+        let (vertex_buffer_slice, index_buffer_slice) = self.shape_geometry.geometry().slices();
         renderpass.set_vertex_buffer(0, vertex_buffer_slice);
         renderpass.set_vertex_buffer(1, self.instance.slice(..));
         renderpass.set_index_buffer(index_buffer_slice, wgpu::IndexFormat::Uint32);
 
-        renderpass.draw_indexed(0..(INDICES.len() as _), 0, 0..self.instances.len() as _);
+        renderpass.set_pipeline(&self.pipeline_filled);
+        renderpass.draw_indexed(
+            0..(ShapeGeometry::INDICES.len() as _),
+            0,
+            0..self.instances.len() as _,
+        );
     }
 
     pub fn update(&mut self, view_projection_matrix: glm::Mat4, queue: &Queue) {
@@ -275,6 +309,7 @@ impl Scene {
         device: &Device,
         surface_format: TextureFormat,
         uniform: &UniformBinding,
+        primitive_state: &wgpu::PrimitiveState,
     ) -> RenderPipeline {
         let shader_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: None,
@@ -287,49 +322,69 @@ impl Scene {
             push_constant_ranges: &[],
         });
 
+        let vertex_attributes = Vertex::vertex_attributes();
+        let instance_attributes = Instance::vertex_attributes();
+        let buffers = [
+            Vertex::description(&vertex_attributes),
+            Instance::description(&instance_attributes),
+        ];
+
+        let vertex = wgpu::VertexState {
+            module: &shader_module,
+            entry_point: "vertex_main",
+            buffers: &buffers,
+        };
+
+        let fragment_state = wgpu::FragmentState {
+            module: &shader_module,
+            entry_point: "fragment_main",
+            targets: &[Some(wgpu::ColorTargetState {
+                format: surface_format,
+                blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                write_mask: wgpu::ColorWrites::ALL,
+            })],
+        };
+
         device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: None,
             layout: Some(&pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &shader_module,
-                entry_point: "vertex_main",
-                buffers: &[
-                    Vertex::description(&Vertex::vertex_attributes()),
-                    Instance::description(&Instance::vertex_attributes()),
-                ],
-            },
-            primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::TriangleStrip,
-                strip_index_format: Some(wgpu::IndexFormat::Uint32),
-                front_face: wgpu::FrontFace::Cw,
-                cull_mode: None,
-                polygon_mode: wgpu::PolygonMode::Line,
-                conservative: false,
-                unclipped_depth: false,
-            },
-            depth_stencil: Some(wgpu::DepthStencilState {
-                format: Texture::DEPTH_FORMAT,
-                depth_write_enabled: true,
-                depth_compare: wgpu::CompareFunction::Less,
-                stencil: wgpu::StencilState::default(),
-                bias: wgpu::DepthBiasState::default(),
-            }),
-            multisample: wgpu::MultisampleState {
-                count: 1,
-                mask: !0,
-                alpha_to_coverage_enabled: false,
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &shader_module,
-                entry_point: "fragment_main",
-                targets: &[Some(wgpu::ColorTargetState {
-                    format: surface_format,
-                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-            }),
+            vertex,
+            primitive: *primitive_state,
+            depth_stencil: Some(Self::depth_stencil_state()),
+            multisample: Self::multisample(),
+            fragment: Some(fragment_state),
             multiview: None,
         })
+    }
+
+    fn primitive_state(polygon_mode: PolygonMode) -> wgpu::PrimitiveState {
+        wgpu::PrimitiveState {
+            topology: wgpu::PrimitiveTopology::TriangleStrip,
+            strip_index_format: Some(wgpu::IndexFormat::Uint32),
+            front_face: wgpu::FrontFace::Cw,
+            cull_mode: None,
+            polygon_mode,
+            conservative: false,
+            unclipped_depth: false,
+        }
+    }
+
+    fn depth_stencil_state() -> wgpu::DepthStencilState {
+        wgpu::DepthStencilState {
+            format: Texture::DEPTH_FORMAT,
+            depth_write_enabled: true,
+            depth_compare: wgpu::CompareFunction::Less,
+            stencil: wgpu::StencilState::default(),
+            bias: wgpu::DepthBiasState::default(),
+        }
+    }
+
+    fn multisample() -> wgpu::MultisampleState {
+        wgpu::MultisampleState {
+            count: 1,
+            mask: !0,
+            alpha_to_coverage_enabled: false,
+        }
     }
 }
 
