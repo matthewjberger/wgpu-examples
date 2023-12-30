@@ -1,52 +1,16 @@
-use std::cmp::max;
-use winit::{
-    dpi::PhysicalSize,
-    event::{ElementState, Event, VirtualKeyCode, WindowEvent},
-    event_loop::{ControlFlow, EventLoop},
-    window::WindowBuilder,
-};
-
-fn required_features() -> wgpu::Features {
-    wgpu::Features::empty()
-}
-
-fn optional_features() -> wgpu::Features {
-    wgpu::Features::empty()
-}
-
-#[derive(Default, Copy, Clone)]
-pub struct Viewport {
-    pub x: u32,
-    pub y: u32,
-    pub width: u32,
-    pub height: u32,
-}
-
-impl Viewport {
-    pub fn aspect_ratio(&self) -> f32 {
-        self.width as f32 / max(self.height, 0) as f32
-    }
-}
-
 fn main() {
     let (title, width, height) = ("Standalone Winit/Wgpu Example", 800, 600);
 
-    let event_loop = EventLoop::new();
+    let event_loop = winit::event_loop::EventLoop::new();
 
-    let mut window = WindowBuilder::new()
+    let window = winit::window::WindowBuilder::new()
         .with_title(title)
-        .with_inner_size(PhysicalSize::new(width, height))
+        .with_inner_size(winit::dpi::PhysicalSize::new(width, height))
         .with_transparent(true)
         .build(&event_loop)
         .expect("Failed to create winit window!");
 
-    let viewport = Viewport {
-        width,
-        height,
-        ..Default::default()
-    };
-
-    let (surface, device, queue, surface_config) = pollster::block_on(async {
+    let (surface, device, queue, mut surface_config) = pollster::block_on(async {
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
             backends: wgpu::util::backend_bits_from_env().unwrap_or_else(wgpu::Backends::all),
             ..Default::default()
@@ -69,12 +33,14 @@ fn main() {
             wgpu::Limits::default().using_resolution(adapter.limits())
         }
 
+        let required_features = wgpu::Features::empty();
+        let optional_features = wgpu::Features::all();
         let (device, queue) = {
             println!("WGPU Adapter Features: {:#?}", adapter.features());
             adapter
                 .request_device(
                     &wgpu::DeviceDescriptor {
-                        features: (optional_features() & adapter.features()) | required_features(),
+                        features: (optional_features & adapter.features()) | required_features,
                         limits: required_limits(&adapter),
                         label: Some("Render Device"),
                     },
@@ -97,8 +63,8 @@ fn main() {
         let surface_config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             format: surface_format,
-            width: viewport.width,
-            height: viewport.height,
+            width: width,
+            height: height,
             present_mode: surface_capabilities.present_modes[0],
             alpha_mode: surface_capabilities.alpha_modes[0],
             view_formats: vec![],
@@ -112,9 +78,13 @@ fn main() {
     let gui_context = egui::Context::default();
     gui_context.set_pixels_per_point(window.scale_factor() as f32);
 
+    let depth_format = None;
+    let mut gui_renderer =
+        egui_wgpu::Renderer::new(&device, surface_config.format, depth_format, 1);
+
     event_loop.run(move |event, _, control_flow| {
         let gui_captured_event = match &event {
-            Event::WindowEvent { event, window_id } => {
+            winit::event::Event::WindowEvent { event, window_id } => {
                 if *window_id == window.id() {
                     gui_state.on_event(&gui_context, &event).consumed
                 } else {
@@ -124,16 +94,23 @@ fn main() {
             _ => false,
         };
 
-        if !gui_captured_event {
-            // If the gui isn't capturing the event,
-            // consume it for the game
+        if gui_captured_event {
+            return;
         }
 
         match event {
-            Event::MainEventsCleared => {
+            winit::event::Event::MainEventsCleared => {
                 let gui_input = gui_state.take_egui_input(&window);
+
                 gui_context.begin_frame(gui_input);
-                // TODO: Render a gui here
+
+                egui::Window::new("wgpu")
+                    .resizable(false)
+                    .fixed_pos((10.0, 10.0))
+                    .show(&gui_context, |ui| {
+                        ui.heading("Triangle");
+                    });
+
                 let egui::FullOutput {
                     textures_delta,
                     shapes,
@@ -141,6 +118,7 @@ fn main() {
                 } = gui_context.end_frame();
 
                 let paint_jobs = gui_context.tessellate(shapes);
+
                 let screen_descriptor = {
                     let window_size = window.inner_size();
                     egui_wgpu::renderer::ScreenDescriptor {
@@ -150,32 +128,111 @@ fn main() {
                 };
 
                 // TODO: Update the game here
+
+                let surface_texture = surface
+                    .get_current_texture()
+                    .expect("Failed to get surface texture!");
+
+                let view = surface_texture
+                    .texture
+                    .create_view(&wgpu::TextureViewDescriptor::default());
+
+                let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("Render Encoder"),
+                });
+
+                for (id, image_delta) in &textures_delta.set {
+                    gui_renderer.update_texture(&device, &queue, *id, image_delta);
+                }
+
+                for id in &textures_delta.free {
+                    gui_renderer.free_texture(id);
+                }
+
+                gui_renderer.update_buffers(
+                    &device,
+                    &queue,
+                    &mut encoder,
+                    &paint_jobs,
+                    &screen_descriptor,
+                );
+
+                encoder.insert_debug_marker("Render scene");
+
+                // This scope around the render_pass prevents the
+                // render_pass from holding a borrow to the encoder,
+                // which would prevent calling `.finish()` in
+                // preparation for queue submission.
+                {
+                    let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                        label: Some("Render Pass"),
+                        color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                            view: &view,
+                            resolve_target: None,
+                            ops: wgpu::Operations {
+                                load: wgpu::LoadOp::Clear(wgpu::Color {
+                                    r: 0.1,
+                                    g: 0.2,
+                                    b: 0.3,
+                                    a: 1.0,
+                                }),
+                                store: true,
+                            },
+                        })],
+                        depth_stencil_attachment: None,
+                    });
+
+                    gui_renderer.render(&mut render_pass, &paint_jobs, &screen_descriptor);
+                }
+
+                queue.submit(std::iter::once(encoder.finish()));
+
+                surface_texture.present();
             }
-            Event::WindowEvent { event, window_id } if window_id == window.id() => match event {
-                WindowEvent::CloseRequested => *control_flow = ControlFlow::Exit,
 
-                WindowEvent::KeyboardInput { input, .. } => {
-                    if let (Some(VirtualKeyCode::Escape), ElementState::Pressed) =
-                        (input.virtual_keycode, input.state)
-                    {
-                        *control_flow = ControlFlow::Exit;
+            winit::event::Event::WindowEvent { event, window_id } if window_id == window.id() => {
+                match event {
+                    winit::event::WindowEvent::CloseRequested => {
+                        *control_flow = winit::event_loop::ControlFlow::Exit
                     }
 
-                    if let Some(keycode) = input.virtual_keycode.as_ref() {
-                        // Handle a key press
+                    winit::event::WindowEvent::KeyboardInput { input, .. } => {
+                        if let (
+                            Some(winit::event::VirtualKeyCode::Escape),
+                            winit::event::ElementState::Pressed,
+                        ) = (input.virtual_keycode, input.state)
+                        {
+                            *control_flow = winit::event_loop::ControlFlow::Exit;
+                        }
+
+                        if let Some(_keycode) = input.virtual_keycode.as_ref() {
+                            // Handle a key press
+                        }
                     }
-                }
 
-                WindowEvent::MouseInput { button, state, .. } => {
-                    // Handle a mouse button press
-                }
+                    winit::event::WindowEvent::MouseInput {
+                        button: _button,
+                        state: _state,
+                        ..
+                    } => {
+                        // Handle a mouse button press
+                    }
 
-                WindowEvent::Resized(PhysicalSize { width, height }) => {
-                    // Handle resizing
+                    winit::event::WindowEvent::Resized(winit::dpi::PhysicalSize {
+                        width,
+                        height,
+                    }) => {
+                        if width != 0 && height != 0 {
+                            println!("Resizing renderer surface to: ({width}, {height})");
+                            surface_config.width = width;
+                            surface_config.height = height;
+                            surface.configure(&device, &surface_config);
+                        }
+                    }
+                    _ => {}
                 }
-                _ => {}
-            },
-            Event::LoopDestroyed => {
+            }
+            winit::event::Event::LoopDestroyed => {
                 // Handle cleanup
             }
             _ => {}
