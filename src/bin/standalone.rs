@@ -108,15 +108,50 @@ fn main() {
         (surface, device, queue, surface_config)
     });
 
+    let mut gui_state = egui_winit::State::new(&event_loop);
+    let gui_context = egui::Context::default();
+    gui_context.set_pixels_per_point(window.scale_factor() as f32);
+
     event_loop.run(move |event, _, control_flow| {
+        let gui_captured_event = match &event {
+            Event::WindowEvent { event, window_id } => {
+                if *window_id == window.id() {
+                    gui_state.on_event(&gui_context, &event).consumed
+                } else {
+                    false
+                }
+            }
+            _ => false,
+        };
+
+        if !gui_captured_event {
+            // If the gui isn't capturing the event,
+            // consume it for the game
+        }
+
         match event {
             Event::MainEventsCleared => {
-                // Draw
+                let gui_input = gui_state.take_egui_input(&window);
+                gui_context.begin_frame(gui_input);
+                // TODO: Render a gui here
+                let egui::FullOutput {
+                    textures_delta,
+                    shapes,
+                    ..
+                } = gui_context.end_frame();
+
+                let paint_jobs = gui_context.tessellate(shapes);
+                let screen_descriptor = {
+                    let window_size = window.inner_size();
+                    egui_wgpu::renderer::ScreenDescriptor {
+                        size_in_pixels: [window_size.width, window_size.height],
+                        pixels_per_point: window.scale_factor() as f32,
+                    }
+                };
+
+                // TODO: Update the game here
             }
-            Event::WindowEvent {
-                ref event,
-                window_id,
-            } if window_id == window.id() => match event {
+            Event::WindowEvent { event, window_id } if window_id == window.id() => match event {
                 WindowEvent::CloseRequested => *control_flow = ControlFlow::Exit,
 
                 WindowEvent::KeyboardInput { input, .. } => {
